@@ -6,11 +6,9 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/genzj/goTApaper/actor"
 	"github.com/genzj/goTApaper/channel"
+	"github.com/genzj/goTApaper/config"
 	"github.com/spf13/cobra"
-)
-
-const (
-	wallpaperPath string = "./wallpaper.jpg"
+	"github.com/spf13/viper"
 )
 
 func init() {
@@ -27,27 +25,33 @@ var refreshCmd = &cobra.Command{
 }
 
 func refresh() {
-	var ngChannel channel.NgPoTChannelProvider
+	wallpaperPath := config.GetWallpaperFileName()
+	channels := viper.GetStringSlice("channels")
 
-	raw, _, err := ngChannel.Download(nil, nil)
-	if err != nil {
-		logrus.Panic(err)
-	}
+	for _, name := range channels {
 
-	out, err := os.Create(wallpaperPath)
-	if err != nil {
-		logrus.Panic(err)
-	}
-	defer out.Close()
+		raw, _, format, err := channel.Channels.Run(name)
+		if err != nil {
+			logrus.Panic(err)
+		}
 
-	_, err = raw.WriteTo(out)
-	if err != nil {
-		logrus.Panic(err)
-	}
+		wallpaperFileName := wallpaperPath + "." + format
 
-	var setter actor.Win32Setter
-	err = setter.Set(wallpaperPath)
-	if err != nil {
-		logrus.Panic(err)
+		out, err := os.Create(wallpaperFileName)
+		if err != nil {
+			logrus.Panic(err)
+		}
+		defer out.Close()
+
+		_, err = raw.WriteTo(out)
+		if err != nil {
+			logrus.Panic(err)
+		}
+
+		var setter actor.Win32Setter
+		err = setter.Set(wallpaperFileName)
+		if err != nil {
+			logrus.Panic(err)
+		}
 	}
 }

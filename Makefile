@@ -1,6 +1,12 @@
 .PHONY: build build-alpine clean test help default
 
-BIN_NAME=goTApaper.exe
+UNAME := $(shell uname)
+
+ifeq ($(UNAME), Linux)
+	BIN_NAME=goTApaper
+else
+	BIN_NAME=goTApaper.exe
+endif
 
 VERSION := $(shell grep "const Version " cmd/version.go | sed -E 's/.*"(.+)"$$/\1/')
 GIT_COMMIT=$(shell git rev-parse HEAD)
@@ -26,9 +32,9 @@ help:
 build:
 	@echo "building ${BIN_NAME} ${VERSION}"
 	@echo "GOPATH=${GOPATH}"
-	{ mkdir -p bin/i18n/ || true ; } && \
+	mkdir -p bin/i18n/ && \
 		{ cp *.all.json bin/i18n/ || true ; } && \
-		{ cp *.example bin/ || true ; } && \
+		cp *.example bin/ && \
 		go build -ldflags "-s -w -X github.com/genzj/goTApaper/cmd.GitCommit=${GIT_COMMIT}${GIT_DIRTY} -X github.com/genzj/goTApaper/cmd.VersionPrerelease=DEV" -o bin/${BIN_NAME}
 
 build-alpine:

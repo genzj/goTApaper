@@ -1,0 +1,13 @@
+# vim: ft=yaml shiftwidth=2 softtabstop=2 expandtab
+---
+wallpaper-file-name: wallpaper
+
+channels:
+  - ng-photo-of-today
+
+ng-photo-of-today:
+  strategy: largest
+
+bing:
+  strategy: largest-no-logo
+
