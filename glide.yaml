@@ -13,3 +13,6 @@ import:
 - package: golang.org/x/sys
   subpackages:
   - windows
+- package: github.com/spf13/cobra
+- package: github.com/spf13/viper
+- package: github.com/kardianos/osext
