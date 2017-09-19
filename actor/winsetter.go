@@ -1,3 +1,5 @@
+// +build windows
+
 package actor
 
 import (
@@ -35,4 +37,8 @@ func (_ Win32Setter) Set(filename string) error {
 		return nil
 	}
 	return windows.GetLastError()
+}
+
+func init() {
+	Setters.Register("windows", Win32Setter(0))
 }

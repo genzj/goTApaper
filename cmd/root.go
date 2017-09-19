@@ -15,6 +15,7 @@ const AppName string = "goTApaper"
 
 var cfgFile string
 var lang string
+var debug bool
 
 // RootCmd is the entry of whole program
 var RootCmd = &cobra.Command{
@@ -32,6 +33,14 @@ func Execute() {
 	}
 }
 
+func initLogLevel() {
+	if debug {
+		logrus.SetLevel(logrus.DebugLevel)
+	} else {
+		logrus.SetLevel(logrus.InfoLevel)
+	}
+}
+
 func initConfig() {
 	viper.SetEnvPrefix(AppName)
 	viper.SetConfigType("yaml")
@@ -45,6 +54,8 @@ func initConfig() {
 
 	viper.AutomaticEnv() // read in environment variables that match
 
+	initLogLevel()
+	logrus.Debugln("config file searching folder: ", util.ExecutableFolder())
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		logrus.Debugln("Using config file:", viper.ConfigFileUsed())
@@ -55,6 +66,7 @@ func initConfig() {
 	} else {
 		logrus.Debugln("No config file found, use default settings")
 	}
+	initLogLevel() // intentionally repeat, in case config file updates settings
 }
 
 func init() {
@@ -66,4 +78,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&lang, "lang", "en-us", "language used for display, in xx-YY format.")
 	viper.BindPFlag("global.Language", RootCmd.PersistentFlags().Lookup("lang"))
 	viper.SetDefault("global.Language", "en-us")
+	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug log output")
+	viper.BindPFlag("global.Debug", RootCmd.PersistentFlags().Lookup("debug"))
+	viper.SetDefault("global.Debug", false)
 }

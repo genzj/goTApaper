@@ -11,9 +11,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func init() {
-	RootCmd.AddCommand(refreshCmd)
-}
+var setterName string
 
 var refreshCmd = &cobra.Command{
 	Use:   "refresh",
@@ -24,12 +22,24 @@ var refreshCmd = &cobra.Command{
 	},
 }
 
+func init() {
+	refreshCmd.PersistentFlags().StringVar(&setterName, "setter", DefaultSetter, "setter to configure desktop wallpaper")
+	viper.BindPFlag("global.Setter", refreshCmd.PersistentFlags().Lookup("setter"))
+	viper.SetDefault("global.Setter", DefaultSetter)
+	RootCmd.AddCommand(refreshCmd)
+}
+
 func refresh() {
 	wallpaperPath := config.GetWallpaperFileName()
 	channels := viper.GetStringSlice("channels")
 
-	for _, name := range channels {
+	v, ok := actor.Setters.Get(setterName)
+	if !ok {
+		logrus.Panicf("setter \"%s\" not registered", setterName)
+	}
+	setter := v.(actor.Setter)
 
+	for _, name := range channels {
 		raw, _, format, err := channel.Channels.Run(name)
 		if err != nil {
 			logrus.Panic(err)
@@ -48,7 +58,6 @@ func refresh() {
 			logrus.Panic(err)
 		}
 
-		var setter actor.Win32Setter
 		err = setter.Set(wallpaperFileName)
 		if err != nil {
 			logrus.Panic(err)
