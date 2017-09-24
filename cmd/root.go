@@ -16,7 +16,6 @@ const AppName string = "goTApaper"
 
 var cfgFile string
 var lang string
-var debug bool
 
 // RootCmd is the entry of whole program
 var RootCmd = &cobra.Command{
@@ -34,10 +33,11 @@ func Execute() {
 	}
 }
 
-func initLogLevel() {
-	if debug || viper.GetBool("debug") {
+func initLogger() {
+	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+	if viper.GetBool("debug") {
 		logrus.SetLevel(logrus.DebugLevel)
-		logrus.WithField("arg", debug).WithField("conf", viper.GetBool("debug")).Debugln("Debug log enabled")
+		logrus.Debugln("Debug log enabled")
 	} else {
 		logrus.SetLevel(logrus.InfoLevel)
 	}
@@ -57,7 +57,7 @@ func initConfig() {
 
 	viper.AutomaticEnv() // read in environment variables that match
 
-	initLogLevel()
+	initLogger()
 	logrus.Debugln("config file searching folder: ", util.ExecutableFolder())
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
@@ -69,7 +69,7 @@ func initConfig() {
 	} else {
 		logrus.Debugln("No config file found, use default settings")
 	}
-	initLogLevel() // intentionally repeat, in case config file updates settings
+	initLogger() // intentionally repeat, in case config file updates settings
 	logrus.Debugf("%+v", viper.AllSettings())
 }
 
@@ -80,6 +80,6 @@ func init() {
 	viper.BindPFlag("history-file", RootCmd.PersistentFlags().Lookup("history-file"))
 	RootCmd.PersistentFlags().StringVar(&lang, "lang", "en-us", "language used for display, in xx-YY format.")
 	viper.BindPFlag("language", RootCmd.PersistentFlags().Lookup("lang"))
-	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug log output")
+	RootCmd.PersistentFlags().Bool("debug", false, "enable debug log output")
 	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }

@@ -11,6 +11,10 @@ wallpaper-file-name: wallpaper
 # can be one of "direct", "environment"(Linux Only), or a url of proxy server.
 proxy: direct
 
+daemon:
+  # interval of two adjoined background refresh
+  interval: 11
+
 channels:
   - ng-photo-of-today
 

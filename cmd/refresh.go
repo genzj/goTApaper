@@ -29,6 +29,16 @@ func init() {
 }
 
 func refresh() {
+	// reread config, in case refresh is called by daemon after a long sleep
+	// during which user updated the config file
+	if err := viper.ReadInConfig(); err == nil {
+		logrus.Debugln("Using config file:", viper.ConfigFileUsed())
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"CfgFile": viper.ConfigFileUsed(),
+		}).Fatalf("Config File is not readable")
+	}
+
 	wallpaperPath := config.GetWallpaperFileName()
 	channels := viper.GetStringSlice("channels")
 

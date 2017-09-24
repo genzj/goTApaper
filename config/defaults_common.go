@@ -6,6 +6,8 @@ import (
 
 const (
 	DefaultWallpaperFileName = "./wallpaper"
+
+	DefaultDaemonInterval = 3600
 )
 
 func InitDefaultConfig() {

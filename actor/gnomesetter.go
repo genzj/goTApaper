@@ -1,3 +1,5 @@
+// +build linux
+
 package actor
 
 import (
@@ -13,15 +15,14 @@ func setWithCommand(path string, arg ...string) error {
 	logrus.Debugf("executing setter with command %s %v", path, arg)
 	if err := cmd.Start(); err != nil {
 		return err
-	} else {
-		return nil
 	}
+	return nil
 }
 
 type Gnome3Setter int
 
-// SetWallpaper can set wallpaper by gsetting cli tool
-func (_ Gnome3Setter) Set(filename string) error {
+// Set can set wallpaper by gsetting cli tool
+func (g Gnome3Setter) Set(filename string) error {
 	path, err := filepath.Abs(filename)
 	if err != nil {
 		return err
@@ -37,8 +38,8 @@ func (_ Gnome3Setter) Set(filename string) error {
 
 type Gnome2Setter int
 
-// SetWallpaper can set wallpaper by gsetting cli tool
-func (_ Gnome2Setter) Set(filename string) error {
+// Set can set wallpaper by gconftool
+func (g Gnome2Setter) Set(filename string) error {
 	path, err := filepath.Abs(filename)
 	if err != nil {
 		return err

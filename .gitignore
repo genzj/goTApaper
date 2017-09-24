@@ -84,3 +84,4 @@ out/
 /*.jpg
 /*.jpeg
 /goTApaper
+/config.yaml
