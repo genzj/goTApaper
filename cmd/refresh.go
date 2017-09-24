@@ -23,9 +23,9 @@ var refreshCmd = &cobra.Command{
 }
 
 func init() {
-	refreshCmd.PersistentFlags().StringVar(&setterName, "setter", DefaultSetter, "setter to configure desktop wallpaper")
+	refreshCmd.PersistentFlags().StringVar(&setterName, "setter", config.DefaultSetter, "setter to configure desktop wallpaper")
 	viper.BindPFlag("global.Setter", refreshCmd.PersistentFlags().Lookup("setter"))
-	viper.SetDefault("global.Setter", DefaultSetter)
+	viper.SetDefault("global.Setter", config.DefaultSetter)
 	RootCmd.AddCommand(refreshCmd)
 }
 
@@ -39,6 +39,10 @@ func refresh() {
 	}
 	setter := v.(actor.Setter)
 
+	if len(channels) == 0 {
+		logrus.Warnf("no channels found in the configuration file %s", viper.ConfigFileUsed())
+	}
+
 	for _, name := range channels {
 		raw, _, format, err := channel.Channels.Run(name)
 		if err != nil {
@@ -49,18 +53,21 @@ func refresh() {
 
 		out, err := os.Create(wallpaperFileName)
 		if err != nil {
-			logrus.Panic(err)
+			logrus.Error(err)
+			continue
 		}
 		defer out.Close()
 
 		_, err = raw.WriteTo(out)
 		if err != nil {
-			logrus.Panic(err)
+			logrus.Error(err)
+			continue
 		}
 
 		err = setter.Set(wallpaperFileName)
 		if err != nil {
-			logrus.Panic(err)
+			logrus.Error(err)
+			continue
 		}
 	}
 }

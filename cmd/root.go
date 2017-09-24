@@ -71,8 +71,8 @@ func initConfig() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config-file", "", "config file (default is ./config.yaml under app installation path.)")
-	RootCmd.PersistentFlags().String("history-file", "", "history file (default is ./history.json under app installation path.)")
+	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config-file", "c", "", "config file (default is ./config.yaml in the folder of app executable binary.)")
+	RootCmd.PersistentFlags().String("history-file", "", "history file (default is ./history.json in the folder of app executable binary.)")
 	viper.BindPFlag("global.HistoryFile", RootCmd.PersistentFlags().Lookup("history-file"))
 	viper.SetDefault("global.HistoryFile", "./history.json")
 	RootCmd.PersistentFlags().StringVar(&lang, "lang", "en-us", "language used for display, in xx-YY format.")

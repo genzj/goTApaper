@@ -1,3 +1,3 @@
-package cmd
+package config
 
 const DefaultSetter = "windows"
