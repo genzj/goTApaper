@@ -24,8 +24,7 @@ var refreshCmd = &cobra.Command{
 
 func init() {
 	refreshCmd.PersistentFlags().StringVar(&setterName, "setter", config.DefaultSetter, "setter to configure desktop wallpaper")
-	viper.BindPFlag("global.Setter", refreshCmd.PersistentFlags().Lookup("setter"))
-	viper.SetDefault("global.Setter", config.DefaultSetter)
+	viper.BindPFlag("Setter", refreshCmd.PersistentFlags().Lookup("setter"))
 	RootCmd.AddCommand(refreshCmd)
 }
 

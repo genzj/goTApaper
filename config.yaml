@@ -1,6 +1,15 @@
 # vim: ft=yaml shiftwidth=2 softtabstop=2 expandtab
 ---
+history-file: history.json
+
+language: en-us
+
+debug: true
+
 wallpaper-file-name: wallpaper
+
+# can be one of "direct", "environment"(Linux Only), or a url of proxy server.
+proxy: environment
 
 channels:
   - ng-photo-of-today

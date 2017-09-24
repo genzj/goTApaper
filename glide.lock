@@ -1,5 +1,5 @@
-hash: ed57abc56bb18a1f89f5a0e5dcdead02bb653f453da24db0962d7b63c43ebc50
-updated: 2017-08-13T22:51:32.0943071+08:00
+hash: 082b69a2ba4e4b169aa4069de12544a897f057b4c1f0ec7792d8a68cb92bec0a
+updated: 2017-09-24T23:48:25.289946613+08:00
 imports:
 - name: github.com/fsnotify/fsnotify
   version: 4da3e2cfbabc9f751898f250b49f2439785783a1
@@ -48,6 +48,10 @@ imports:
   version: e57e3eeb33f795204c1ca35f56c44f83227c6e66
 - name: github.com/spf13/viper
   version: 25b30aa063fc18e48662b86996252eabdcf2f0c7
+- name: golang.org/x/net
+  version: 0744d001aa8470aaa53df28d32e5ceeb8af9bd70
+  subpackages:
+  - proxy
 - name: golang.org/x/sys
   version: 99f16d856c9836c42d24e7ab64ea72916925fa97
   subpackages:

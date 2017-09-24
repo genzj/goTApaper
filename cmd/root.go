@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -34,14 +35,16 @@ func Execute() {
 }
 
 func initLogLevel() {
-	if debug {
+	if debug || viper.GetBool("debug") {
 		logrus.SetLevel(logrus.DebugLevel)
+		logrus.WithField("arg", debug).WithField("conf", viper.GetBool("debug")).Debugln("Debug log enabled")
 	} else {
 		logrus.SetLevel(logrus.InfoLevel)
 	}
 }
 
 func initConfig() {
+	config.InitDefaultConfig()
 	viper.SetEnvPrefix(AppName)
 	viper.SetConfigType("yaml")
 
@@ -67,18 +70,16 @@ func initConfig() {
 		logrus.Debugln("No config file found, use default settings")
 	}
 	initLogLevel() // intentionally repeat, in case config file updates settings
+	logrus.Debugf("%+v", viper.AllSettings())
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config-file", "c", "", "config file (default is ./config.yaml in the folder of app executable binary.)")
 	RootCmd.PersistentFlags().String("history-file", "", "history file (default is ./history.json in the folder of app executable binary.)")
-	viper.BindPFlag("global.HistoryFile", RootCmd.PersistentFlags().Lookup("history-file"))
-	viper.SetDefault("global.HistoryFile", "./history.json")
+	viper.BindPFlag("history-file", RootCmd.PersistentFlags().Lookup("history-file"))
 	RootCmd.PersistentFlags().StringVar(&lang, "lang", "en-us", "language used for display, in xx-YY format.")
-	viper.BindPFlag("global.Language", RootCmd.PersistentFlags().Lookup("lang"))
-	viper.SetDefault("global.Language", "en-us")
+	viper.BindPFlag("language", RootCmd.PersistentFlags().Lookup("lang"))
 	RootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "enable debug log output")
-	viper.BindPFlag("global.Debug", RootCmd.PersistentFlags().Lookup("debug"))
-	viper.SetDefault("global.Debug", false)
+	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
 }
