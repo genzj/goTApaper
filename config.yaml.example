@@ -4,7 +4,7 @@ history-file: history.json
 
 language: en-us
 
-debug: true
+debug: false
 
 wallpaper-file-name: wallpaper
 
@@ -12,8 +12,8 @@ wallpaper-file-name: wallpaper
 proxy: direct
 
 daemon:
-  # interval of two adjoined background refresh
-  interval: 11
+  # seconds to sleep between two adjoined background refresh
+  interval: 3600
 
 channels:
   - ng-photo-of-today
