@@ -34,7 +34,11 @@ func Execute() {
 }
 
 func initLogger() {
+	//file, _ := os.OpenFile("logrus.log", os.O_CREATE|os.O_WRONLY, 0666)
+
 	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
+	//logrus.SetOutput(file)
+
 	if viper.GetBool("debug") {
 		logrus.SetLevel(logrus.DebugLevel)
 		logrus.Debugln("Debug log enabled")
@@ -74,6 +78,8 @@ func initConfig() {
 }
 
 func init() {
+	// disable mouse trap, enable start from windows explore
+	cobra.MousetrapHelpText = ""
 	cobra.OnInitialize(initConfig)
 	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config-file", "c", "", "config file (default is ./config.yaml in the folder of app executable binary.)")
 	RootCmd.PersistentFlags().String("history-file", "", "history file (default is ./history.json in the folder of app executable binary.)")
