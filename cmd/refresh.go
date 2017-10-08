@@ -55,7 +55,13 @@ func refresh() {
 	for _, name := range channels {
 		raw, _, format, err := channel.Channels.Run(name)
 		if err != nil {
-			logrus.Panic(err)
+			logrus.Error(err)
+			continue
+		}
+
+		if raw == nil {
+			logrus.WithField("channel", name).Infoln("no image downloaded")
+			continue
 		}
 
 		wallpaperFileName := wallpaperPath + "." + format

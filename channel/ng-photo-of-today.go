@@ -9,6 +9,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/genzj/goTApaper/config"
+	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/spf13/viper"
 )
@@ -76,7 +77,10 @@ type NgPoTChannelProvider int
 
 func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, error) {
 	var toc picTable
-	logger := logrus.New()
+
+	historyManager := history.JsonHistoryManagerSingleton
+	h, err := historyManager.Load(CHANNEL_NAME)
+	logrus.Debugf("history of %s channel: %+v", CHANNEL_NAME, h)
 
 	if err := util.ReadJson(BASE_URL, &toc); err != nil {
 		return nil, nil, "", err
@@ -92,7 +96,7 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 	if picurl == "" {
 		return nil, nil, "", errors.New("No picture URL found")
 	}
-	logger.WithField(
+	logrus.WithField(
 		"width", width,
 	).WithField(
 		"picurl", item.URL+picurl,
@@ -103,6 +107,11 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 	).Info(
 		"picture URL decided",
 	)
+
+	if h.Has(item.URL + picurl) {
+		logrus.Infoln("item url alreay exists in history file, ignore.")
+		return nil, nil, "", nil
+	}
 
 	resp, err := util.GetInType(item.URL+picurl, "image/jpeg")
 	if err != nil {
@@ -122,7 +131,10 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 	if err != nil {
 		return raw, nil, "", err
 	}
-	logger.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
+	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
+
+	h.Mark(item.URL + picurl)
+	historyManager.Save(h)
 
 	return raw, img, format, nil
 }
