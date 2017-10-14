@@ -1,0 +1,70 @@
+description: |
+  configuration management related APIs
+
+get:
+  description: |
+    get the full dump of configuration
+  responses:
+    200:
+      body:
+        application/json:
+          example:
+            history-file: history.json
+
+            language: en-us
+
+            debug: false
+
+            wallpaper-file-name: wallpaper
+
+            proxy: direct
+
+            daemon:
+              interval: 3600
+
+            channels:
+              - ng-photo-of-today
+
+            ng-photo-of-today:
+              strategy: largest
+
+            bing:
+              strategy: largest-no-logo
+
+/{configKey}:
+  description: |
+    get or update a specific configuration field
+
+  uriParameters:
+    configKey:
+      type: ConfigKey
+
+  get:
+    responses:
+      200:
+        description: |
+          key-value pair of the queried configuration field.
+        body:
+          application/json:
+            example:
+              daemon.interval: 3600
+      400:
+        description: |
+          configId does not exist or not point to a leaf field.
+        body:
+          application/json:
+            type: ErrorInfo
+
+  patch:
+    body:
+      example:
+        proxy: socks5://127.0.0.1:1080
+
+    responses:
+      400:
+        description: |
+          configId does not exist or not point to a leaf field.
+        body:
+          application/json:
+            type: ErrorInfo
+

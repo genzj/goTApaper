@@ -1,0 +1,21 @@
+#%RAML 1.0
+---
+title: goTApaper management
+baseUri: "http://127.0.0.1:9073/"
+version: v1
+mediaType: application/json
+protocols: http
+
+securitySchemes: !include security.raml
+
+# TODO Add security to API
+# securedBy: token_security
+
+types: !include types.raml
+
+resourceTypes: !include resource-types.raml
+
+traits: !include traits.raml
+
+/config: !include endpoints.d/config.raml
+
