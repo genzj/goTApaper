@@ -76,6 +76,10 @@ func initConfig() {
 	}
 	initLogger() // intentionally repeat, in case config file updates settings
 	logrus.Debugf("%+v", viper.AllSettings())
+
+	config.Observe("debug", func(_ string, _, _ interface{}) {
+		initLogger()
+	})
 }
 
 func init() {

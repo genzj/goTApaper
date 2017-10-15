@@ -63,18 +63,22 @@ func readUpdateValue(w rest.ResponseWriter, req *rest.Request, v interface{}) (o
 }
 
 func updateConfig(w rest.ResponseWriter, req *rest.Request) {
+	var old, new interface{}
 	ok := false
 	key := req.PathParam("key")
 	if !validateKey(w, key) {
 		return
 	}
 
-	switch viper.Get(key).(type) {
+	old = viper.Get(key)
+
+	switch old.(type) {
 	case bool:
 		v := updateStructureBool{}
 		if readUpdateValue(w, req, &v) {
 			logrus.Debugf("value to be set %+v %T", v, v.Value)
 			viper.Set(key, v.Value)
+			new = interface{}(v.Value)
 			ok = true
 		}
 	case int:
@@ -82,6 +86,7 @@ func updateConfig(w rest.ResponseWriter, req *rest.Request) {
 		if readUpdateValue(w, req, &v) {
 			logrus.Debugf("value to be set %+v %T", v, v.Value)
 			viper.Set(key, v.Value)
+			new = interface{}(v.Value)
 			ok = true
 		}
 	case string:
@@ -89,6 +94,7 @@ func updateConfig(w rest.ResponseWriter, req *rest.Request) {
 		if readUpdateValue(w, req, &v) {
 			logrus.Debugf("value to be set %+v %T", v, v.Value)
 			viper.Set(key, v.Value)
+			new = interface{}(v.Value)
 			ok = true
 		}
 	case []string:
@@ -96,6 +102,7 @@ func updateConfig(w rest.ResponseWriter, req *rest.Request) {
 		if readUpdateValue(w, req, &v) {
 			logrus.Debugf("value to be set %+v %T", v, v.Value)
 			viper.Set(key, v.Value)
+			new = interface{}(v.Value)
 			ok = true
 		}
 	default:
@@ -104,6 +111,7 @@ func updateConfig(w rest.ResponseWriter, req *rest.Request) {
 
 	if ok {
 		config.SaveConfig()
+		config.Emit(key, old, new)
 	}
 }
 

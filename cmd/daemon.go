@@ -27,15 +27,25 @@ func init() {
 
 func daemon() {
 	api.StartApiServer()
-	ch := make(chan error)
+	ch := make(chan int)
+
+	go func() {
+		for {
+			ch <- 1
+			interval := viper.GetInt("daemon.interval")
+			logrus.WithField("interval", interval).Debug("going to sleep")
+			time.Sleep(time.Duration(interval) * time.Second)
+		}
+	}()
+
+	config.Observe("*", func(key string, old, new interface{}) {
+		logrus.WithField("key", key).WithField("old", old).WithField("new", new).Debug("config change triggers refresh")
+		ch <- 1
+	})
+
 	for {
-		go func() {
-			defer func() { ch <- nil }()
-			refresh()
-		}()
 		<-ch
-		interval := viper.GetInt("daemon.interval")
-		logrus.WithField("interval", interval).Debug("refresh over, sleep")
-		time.Sleep(time.Duration(interval) * time.Second)
+		refresh()
+		logrus.Debug("refresh over, wait for next trigger")
 	}
 }
