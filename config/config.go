@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 
 	yaml "gopkg.in/yaml.v2"
@@ -15,6 +16,14 @@ func IsSet(key string) bool {
 
 func IsLeaf(key string) bool {
 	return IsSet(key) && len(viper.GetStringMap(key)) == 0
+}
+
+func SaveConfig() error {
+	if fn := viper.ConfigFileUsed(); fn == "" {
+		return fmt.Errorf("Using default configuration file")
+	} else {
+		return SaveYaml(fn)
+	}
 }
 
 func SaveYaml(fn string) error {
