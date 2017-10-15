@@ -70,7 +70,7 @@ func initConfig() {
 	} else if cfgFile != "" {
 		logrus.WithFields(logrus.Fields{
 			"CfgFile": cfgFile,
-		}).Fatalf("Config File is not readable")
+		}).Fatalf("Config File is not readable: %s", err)
 	} else {
 		logrus.Debugln("No config file found, use default settings")
 	}

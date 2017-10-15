@@ -31,12 +31,14 @@ func init() {
 func refresh() {
 	// reread config, in case refresh is called by daemon after a long sleep
 	// during which user updated the config file
-	if err := viper.ReadInConfig(); err == nil {
+	if viper.ConfigFileUsed() == "" {
+		logrus.Debugln("Using default config file")
+	} else if err := viper.ReadInConfig(); err == nil {
 		logrus.Debugln("Using config file:", viper.ConfigFileUsed())
 	} else {
 		logrus.WithFields(logrus.Fields{
 			"CfgFile": viper.ConfigFileUsed(),
-		}).Fatalf("Config File is not readable")
+		}).Fatalf("Config File is not readable: %s", err)
 	}
 
 	wallpaperPath := config.GetWallpaperFileName()

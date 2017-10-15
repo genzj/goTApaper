@@ -19,3 +19,9 @@ import:
 - package: golang.org/x/net
   subpackages:
   - proxy
+- package: github.com/ant0ine/go-json-rest
+  version: ^3.3.2
+  subpackages:
+  - rest
+- package: github.com/mjibson/esc
+  version: ^0.1.0

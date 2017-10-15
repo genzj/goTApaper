@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/genzj/goTApaper/api"
 	"github.com/genzj/goTApaper/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -25,6 +26,7 @@ func init() {
 }
 
 func daemon() {
+	api.StartApiServer()
 	ch := make(chan error)
 	for {
 		go func() {
