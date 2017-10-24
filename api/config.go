@@ -26,93 +26,102 @@ func getConfig(w rest.ResponseWriter, req *rest.Request) {
 		v := viper.Get(key)
 		logrus.Debugf("value to return %+v %T", v, v)
 		answer := map[string]interface{}{
-			key: v,
+			"key":   key,
+			"value": v,
 		}
 		w.WriteJson(&answer)
 	}
 }
 
 type updateStructure struct {
+	Key   string
 	Value interface{}
 }
 
-type updateStructureBool struct {
-	Value bool
-}
-
-type updateStructureInt struct {
-	Value int
-}
-
-type updateStructureString struct {
-	Value string
-}
-
-type updateStructureStringSlice struct {
-	Value []string
-}
-
-func readUpdateValue(w rest.ResponseWriter, req *rest.Request, v interface{}) (ok bool) {
-	if err := req.DecodeJsonPayload(&v); err != nil {
-		rest.Error(w, fmt.Sprintf("%s", err), 400)
-		ok = false
-	} else {
-		ok = true
+func (u updateStructure) AsBool() (value bool, ok bool) {
+	if value, ok = u.Value.(bool); ok {
+		return value, ok
 	}
-	return ok
+	return false, false
+}
+
+func (u updateStructure) AsInt() (value int, ok bool) {
+	if f64value, ok := u.Value.(float64); ok {
+		return int(f64value), ok
+	}
+	return 0, false
+}
+
+func (u updateStructure) AsString() (value string, ok bool) {
+	if value, ok = u.Value.(string); ok {
+		return value, ok
+	}
+	return "", false
+}
+
+func (u updateStructure) AsInterfaceSlice() (value []interface{}, ok bool) {
+	if value, ok = u.Value.([]interface{}); ok {
+		logrus.Debugf("here 1")
+		return value, ok
+	}
+	logrus.Debugf("here 2")
+	return nil, false
 }
 
 func updateConfig(w rest.ResponseWriter, req *rest.Request) {
-	var old, new interface{}
-	ok := false
+	updating := updateStructure{}
+	if err := req.DecodeJsonPayload(&updating); err != nil {
+		rest.Error(w, fmt.Sprintf("%s", err), 400)
+		return
+	}
+
 	key := req.PathParam("key")
 	if !validateKey(w, key) {
 		return
 	}
+	old := viper.Get(key)
 
-	old = viper.Get(key)
+	logrus.Debugf("value to be set %+v expect type %T, JSON value type %T", updating, old, updating.Value)
 
 	switch old.(type) {
 	case bool:
-		v := updateStructureBool{}
-		if readUpdateValue(w, req, &v) {
-			logrus.Debugf("value to be set %+v %T", v, v.Value)
-			viper.Set(key, v.Value)
-			new = interface{}(v.Value)
-			ok = true
+		if v, ok := updating.AsBool(); ok {
+			viper.Set(key, v)
+			logrus.Debugf("set %s to %v", key, v)
+			finishUpdate(w, updating, old)
 		}
 	case int:
-		v := updateStructureInt{}
-		if readUpdateValue(w, req, &v) {
-			logrus.Debugf("value to be set %+v %T", v, v.Value)
-			viper.Set(key, v.Value)
-			new = interface{}(v.Value)
-			ok = true
+		if v, ok := updating.AsInt(); ok {
+			viper.Set(key, v)
+			logrus.Debugf("set %s to %v", key, v)
+			logrus.Debugf("OK=%v", ok)
+			finishUpdate(w, updating, old)
 		}
 	case string:
-		v := updateStructureString{}
-		if readUpdateValue(w, req, &v) {
-			logrus.Debugf("value to be set %+v %T", v, v.Value)
-			viper.Set(key, v.Value)
-			new = interface{}(v.Value)
-			ok = true
+		if v, ok := updating.AsString(); ok {
+			viper.Set(key, v)
+			logrus.Debugf("set %s to %v", key, v)
+			finishUpdate(w, updating, old)
 		}
-	case []string:
-		v := updateStructureStringSlice{}
-		if readUpdateValue(w, req, &v) {
-			logrus.Debugf("value to be set %+v %T", v, v.Value)
-			viper.Set(key, v.Value)
-			new = interface{}(v.Value)
-			ok = true
+	case []interface{}:
+		if v, ok := updating.AsInterfaceSlice(); ok {
+			viper.Set(key, v)
+			logrus.Debugf("set %s to %v", key, v)
+			finishUpdate(w, updating, old)
 		}
 	default:
-		rest.Error(w, fmt.Sprintf("unsupported config field type, key %s, type %T", key, viper.Get(key)), 500)
+		rest.Error(w, fmt.Sprintf("unsupported config field type, key %s, type %T", key, old), 500)
 	}
 
-	if ok {
-		config.SaveConfig()
-		config.Emit(key, old, new)
-	}
+}
+
+func finishUpdate(w rest.ResponseWriter, updating updateStructure, old interface{}) {
+	config.SaveConfig()
+	config.Emit(updating.Key, old, updating.Value)
+	w.WriteJson(&map[string]interface{}{
+		"key":   updating.Key,
+		"value": updating.Value,
+	})
 }
 
 func init() {

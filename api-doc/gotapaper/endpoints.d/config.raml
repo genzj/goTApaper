@@ -31,6 +31,27 @@ get:
             bing:
               strategy: largest-no-logo
 
+patch:
+  description: |
+    update a bunch of configuration items in one request.
+    the request body is an object containing one or more configuration
+    items, keys of which are of ConfigKey type and values of each field are of ConfigValue.
+  body:
+    type: ConfigValue[]
+    example:
+      - key: proxy
+        value: "socks5://127.0.0.1:1080"
+      - key: daemon.interval
+        value: 3600
+
+  responses:
+    400:
+      description: |
+        some ConfigKey not exist or not point to a leaf field.
+      body:
+        application/json:
+          type: ErrorInfo
+
 /{configKey}:
   description: |
     get or update a specific configuration field
@@ -45,9 +66,7 @@ get:
         description: |
           key-value pair of the queried configuration field.
         body:
-          application/json:
-            example:
-              daemon.interval: 3600
+          type: ConfigValue
       400:
         description: |
           configId does not exist or not point to a leaf field.
@@ -57,8 +76,7 @@ get:
 
   patch:
     body:
-      example:
-        proxy: socks5://127.0.0.1:1080
+      type: ConfigValue
 
     responses:
       400:

@@ -18,6 +18,21 @@ ConfigKey:
     "top level field": proxy
     "nested field": daemon.interval
 
+ConfigValue:
+  type: object
+  description: |
+    value of specific configuration item, may also contain (but not in this
+    version) other meta data.
+  properties:
+    key:
+      type: ConfigKey
+    value:
+      type: any
+      description: |
+        value of configuration item.
+      example:
+        value: "socks5://127.0.0.1:1080"
+
 ErrorInfo:
   type: object
   properties:
@@ -26,3 +41,4 @@ ErrorInfo:
       description: reason of error
       example:
         msg: "'daemon' is not a leaf field"
+
