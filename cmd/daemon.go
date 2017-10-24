@@ -29,23 +29,20 @@ func daemon() {
 	api.StartApiServer()
 	ch := make(chan int)
 
-	go func() {
-		for {
-			ch <- 1
-			interval := viper.GetInt("daemon.interval")
-			logrus.WithField("interval", interval).Debug("going to sleep")
-			time.Sleep(time.Duration(interval) * time.Second)
-		}
-	}()
-
 	config.Observe("*", func(key string, old, new interface{}) {
 		logrus.WithField("key", key).WithField("old", old).WithField("new", new).Debug("config change triggers refresh")
 		ch <- 1
 	})
 
 	for {
-		<-ch
 		refresh()
-		logrus.Debug("refresh over, wait for next trigger")
+		interval := viper.GetInt("daemon.interval")
+		logrus.WithField("interval", interval).Debug("refresh over, going to sleep")
+		select {
+		case <-time.After(time.Duration(interval) * time.Second):
+			logrus.WithField("interval", interval).Debug("awake from sleep")
+		case <-ch:
+			logrus.Debug("triggered by config observer")
+		}
 	}
 }
