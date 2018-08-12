@@ -6,6 +6,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	"io/ioutil"
+	"net/url"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/genzj/goTApaper/config"
@@ -96,10 +97,24 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 	if picurl == "" {
 		return nil, nil, "", errors.New("No picture URL found")
 	}
+	base, err := url.Parse(item.URL)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	downloadUrl, err := url.Parse(picurl)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	finalUrl := base.ResolveReference(downloadUrl).String()
+
 	logrus.WithField(
 		"width", width,
 	).WithField(
-		"picurl", item.URL+picurl,
+		"picurl", picurl,
+	).WithField(
+		"finalUrl", finalUrl,
 	).WithField(
 		"title", item.Title,
 	).WithField(
@@ -108,12 +123,12 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 		"picture URL decided",
 	)
 
-	if h.Has(item.URL + picurl) {
+	if h.Has(finalUrl) {
 		logrus.Infoln("item url alreay exists in history file, ignore.")
 		return nil, nil, "", nil
 	}
 
-	resp, err := util.GetInType(item.URL+picurl, "image/jpeg")
+	resp, err := util.GetInType(finalUrl, "image/jpeg")
 	if err != nil {
 		return nil, nil, "", err
 	}
