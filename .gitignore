@@ -50,7 +50,6 @@ Session.vim
 
 # Temporary
 .netrwhist
-*~
 # Auto-generated tag files
 tags
 # Windows thumbnail cache files
@@ -86,3 +85,7 @@ out/
 /goTApaper
 /config.yaml
 history.json
+
+
+# GoLand files
+.idea/

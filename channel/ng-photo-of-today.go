@@ -29,6 +29,8 @@ type item struct {
 	URL         string
 	Sizes       sizeTable
 	PublishDate string
+	Height      int
+	Width       int
 }
 
 type picTable struct {
@@ -65,9 +67,9 @@ func findFit(table sizeTable) (int, string) {
 		return 0, ret
 	}
 
-	for size, url := range table {
-		if isBetter(strategy, size, url, largest, ret) {
-			ret = url
+	for size, picURL := range table {
+		if isBetter(strategy, size, picURL, largest, ret) {
+			ret = picURL
 			largest = size
 		}
 	}
@@ -93,8 +95,22 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 
 	item := toc.Items[0]
 
-	width, picurl := findFit(item.Sizes)
-	if picurl == "" {
+	if len(item.Sizes) == 0 && item.Width > 0 {
+		logrus.WithField(
+			"width", item.Width,
+		).WithField(
+			"picURL", item.URL,
+		).Debug(
+			"only one candidate",
+		)
+		item.Sizes = sizeTable{
+			item.Width: item.URL,
+		}
+	}
+
+	width, picURL := findFit(item.Sizes)
+
+	if picURL == "" {
 		return nil, nil, "", errors.New("No picture URL found")
 	}
 	base, err := url.Parse(item.URL)
@@ -102,7 +118,7 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 		return nil, nil, "", err
 	}
 
-	downloadUrl, err := url.Parse(picurl)
+	downloadUrl, err := url.Parse(picURL)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -112,7 +128,7 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 	logrus.WithField(
 		"width", width,
 	).WithField(
-		"picurl", picurl,
+		"picURL", picURL,
 	).WithField(
 		"finalUrl", finalUrl,
 	).WithField(
@@ -148,7 +164,7 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 	}
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
-	h.Mark(item.URL + picurl)
+	h.Mark(item.URL + picURL)
 	historyManager.Save(h)
 
 	return raw, img, format, nil
