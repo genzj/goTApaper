@@ -86,5 +86,8 @@ func refresh() {
 			logrus.Error(err)
 			continue
 		}
+
+		// exit on first success. following channels will be detected on next schedule with help of the history mechanism
+		break
 	}
 }

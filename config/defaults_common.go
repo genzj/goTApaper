@@ -17,7 +17,8 @@ func InitDefaultConfig() {
 	viper.SetDefault("wallpaper-file-name", "wallpaper")
 	viper.SetDefault("proxy", "direct")
 	viper.SetDefault("daemon.interval", 3600)
-	viper.SetDefault("channels", []string{"ng-photo-of-today"})
+	viper.SetDefault("channels", []string{"ng-photo-of-today", "bing-wallpaper"})
 	viper.SetDefault("setter", DefaultSetter)
 	viper.SetDefault("ng-photo-of-today.strategy", "largest")
+	viper.SetDefault("bing-wallpaper.strategy", "largest-no-logo")
 }

@@ -54,6 +54,35 @@ func getHttpClient() (*http.Client, error) {
 
 }
 
+func Head(url string, followRedirection bool) (*http.Response, error) {
+	httpClient, err := getHttpClient()
+	if !followRedirection {
+		httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
+	if err != nil {
+		logrus.Error("cannot initiate http client")
+		logrus.Fatal(err)
+		return nil, err
+	}
+	resp, err := httpClient.Head(url)
+	if err != nil {
+		logrus.Errorf("http HEAD encounter error %v", err)
+		return nil, err
+	}
+	return resp, err
+}
+
+func IsReachableLink(url string) bool {
+	response, err := Head(url, false)
+	if err != nil {
+		return false
+	}
+	logrus.Debugf("HEAD response %s", response.Status)
+	return (response.StatusCode / 100) == 2
+}
+
 func GetInType(url, expected string) (*http.Response, error) {
 	httpClient, err := getHttpClient()
 	if err != nil {
