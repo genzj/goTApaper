@@ -97,8 +97,21 @@ func (UnsplashWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, 
 
 	// do my best to obey Unsplash API guidelines: https://help.unsplash.com/api-guidelines/more-on-each-guideline/guideline-triggering-a-download
 	go func() {
-		_, _ = util.GetInType(response.Links.Download, "")
+		resp, err := util.GetInType(response.Links.Download, "")
+		if err != nil {
+			logrus.Warnf("report download failed: %s", err)
+		}
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 	}()
+
+	if response.URLs.Raw == "" {
+		logrus.Error(
+			"no photo URL received, ensure API secret key is correctly set in the config",
+		)
+		return nil, nil, "", fmt.Errorf("cannot get photo from unsplash API")
+	}
 
 	finalUrl := response.URLs.Raw + getPhotoQuery()
 	resp, err := util.GetInType(finalUrl, "image/jpeg")

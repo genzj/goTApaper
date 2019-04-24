@@ -97,6 +97,7 @@ func GetInType(url, expected string) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	logrus.Debugf("%d bytes received from %s", resp.ContentLength, url)
 
 	if !strings.HasPrefix(
 		strings.ToLower(resp.Header.Get("Content-Type")),
