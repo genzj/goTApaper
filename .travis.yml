@@ -1,15 +1,15 @@
 language: go
 go:
-- master
+- 1.x
 before_install:
 - go get -u github.com/axw/gocov/gocov
-- go get -u github.com/mattn/goveralls
 - go get golang.org/x/tools/cmd/cover
 - go get github.com/mitchellh/gox
+
 script:
 - make build
 - make test
-- goveralls -service=travis-ci -v -covermode=count -coverprofile=profile.out
+
 deploy:
   provider: releases
   skip_cleanup: true
@@ -17,6 +17,7 @@ deploy:
     secure: MDo7LEifWd0pMXh6lunvJtjMN/+VN7K3N/hylWHwXp9bxSxK8nxgAAXnVL/qEiN+ysyBCqf8x/qlZ+WUKM6qKokDtWuHw8H392FQDP/Tn691CU01C4rSxup0aj21h/eCwqy3XG6KlYs5N1mQyM6qapS+9cSFyIUswS0QsHpnIYs3wDMKmoUhU/q+ak59VoY5uMYJkkxRAduNZ/5c3EPNz8Gag2XFNewKYRca6bLk7qzZcMCnDBHtU2glqOyU4U7iZ8Yz7yBkvMFGSegbMg8cf9uSTZcDmabvtKZ6vclLw4BmPy5u0Q3P46ipAn8SI6p8ZIBFaNR+3mSkVR+3RH2z7JZun85F+iNMNSttJ/ZC+lNaxq3I4Mb2E60c5TZhGLFEnc4IWhSoMrqiWn7Eonss0YOg+urtgp31yG81VkXdfePR3a+pW74pKKFGc+SKhPxhmx4IZI83JJyKAXZTATAf7Hz0ysLM7I/y6MTcTui6tR08h6Yn84L9CvkF/D/NVRlE4IdHEUHGlNwCv6a4r7TYPyWkeE9LxwZYUzZGNO+iHAarRh5ixLCImP9YbFlzkSnlSb/2JoKQzRH1dfdE73To1lRPxCe9VPE215NjJIIHhiNm8GARx6prGm+Z/zV0g9PF9U0VEVSomPcbQ9dmp1Fh1RY40c/I4d6LfX/EjixFrzc=
   file_glob: true
   file: bin/*
+  draft: true
   on:
     tags: true
 
