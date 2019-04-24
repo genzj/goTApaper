@@ -56,15 +56,16 @@ func getHttpClient() (*http.Client, error) {
 
 func Head(url string, followRedirection bool) (*http.Response, error) {
 	httpClient, err := getHttpClient()
-	if !followRedirection {
-		httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		}
-	}
 	if err != nil {
 		logrus.Error("cannot initiate http client")
 		logrus.Fatal(err)
 		return nil, err
+	}
+
+	if !followRedirection {
+		httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
 	}
 	resp, err := httpClient.Head(url)
 	if err != nil {
@@ -90,6 +91,8 @@ func GetInType(url, expected string) (*http.Response, error) {
 		logrus.Fatal(err)
 		return nil, err
 	}
+
+	logrus.Debugf("get %s", url)
 	resp, err := httpClient.Get(url)
 	if err != nil {
 		return nil, err
@@ -114,7 +117,10 @@ func ReadJson(url string, obj interface{}) error {
 		return err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err

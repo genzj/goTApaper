@@ -22,7 +22,7 @@ var sizeArray = []struct {
 	size  string
 }{
 	//{width: 1200, size: "1920x1200"},
-	{width: 1080, size: "1920x1080"},
+	{width: 1920, size: "1920x1080"},
 }
 
 type bingItem struct {
@@ -111,7 +111,9 @@ func (BingWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, stri
 		return nil, nil, "", err
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	bs, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -127,7 +129,7 @@ func (BingWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, stri
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
 	h.Mark(finalUrl)
-	historyManager.Save(h)
+	_ = historyManager.Save(h)
 
 	return raw, img, format, nil
 }

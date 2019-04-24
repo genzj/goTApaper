@@ -1,14 +1,30 @@
 # vim: ft=yaml shiftwidth=2 softtabstop=2 expandtab
+# goTApaper configuration file
+#
+# this is a YAML 1.2 document, for details about its format, refer to: https://yaml.org/
+#
+# Strategy:
+#   Wallpaper sources normally offer different sizes of a picture for different screen resolutions. The strategy
+# is a hint for the fittest picture.
+#   Currently following values can be used as strategy:
+#     *  largest-no-logo: the largest watermark-free version of picture, meaningful to Bing channel only, other channels
+#        don't add watermark to images
+#     *  largest: always use highest resolution
+#     *  by-width: specify the width of image explicitly, must be used with a "width" option. the height of picture is
+#        calculated automatically to retain the ratio of image
+
 ---
+wallpaper-file-name: wallpaper
+
 history-file: history.json
 
 language: en-us
 
 debug: false
 
-wallpaper-file-name: wallpaper
-
-# can be one of "direct", "environment"(Linux Only), or a url of proxy server.
+# can be one of "direct", "environment"(Linux Only), or url of proxy server in notation of
+#     SCHEME://USERNAME:PASSWORD@HOST:PORT
+#     (e.g. socks5://127.0.0.1:1080).
 proxy: direct
 
 daemon:
@@ -24,4 +40,20 @@ ng-photo-of-today:
 
 bing-wallpaper:
   strategy: largest-no-logo
+
+unsplash:
+  strategy: by-width
+  width: 1920
+  key: unsplash-api-key-id
+  query:
+  orientation: landscape
+  # limit selection to featured photos
+  featured: yes
+  image_parameters:
+    # parameters needed to be appended to picture link, can be used to modify image size or quality
+    # read https://unsplash.com/documentation#supported-parameters for details
+    # please be noted that 'by-width' strategy actually use "w=" parameter for photo resize
+    # the width option will be ignored if a "w" parameter explicitly specified here
+    q: 90
+    dpi: 90
 
