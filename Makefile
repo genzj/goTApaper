@@ -1,4 +1,4 @@
-.PHONY: build build-alpine clean test help default example
+.PHONY: build build-all build-windows-console clean test help default example
 
 UNAME := $(shell uname)
 
@@ -10,15 +10,13 @@ else
 	GO_DAEMON_LDFLAGS := -H windowsgui
 endif
 
-VERSION := $(shell grep "const Version " cmd/version.go | sed -E 's/.*"(.+)"$$/\1/')
+VERSION := $(shell git describe --match 'REV_*' --debug | sed -e's/-.*//' -e 's/REV_//' -e's/_/./g')
 RELEASE ?= DEV
 GIT_COMMIT=$(shell git rev-parse HEAD)
 GIT_DIRTY=$(shell test -n "`git status --porcelain`" && echo "+CHANGES" || true)
 IMAGE_NAME := "genzj/goTApaper"
 
 TARGET_DIR := bin
-
-BIN_TARGET := $(addprefix $(TARGET_DIR)/,$(BIN_NAME))
 
 # NOTE: I exclude the vendor source folder because it's TOO HUGE!
 # So after modify vendor source (rarely happens) or glide-update (may happen),
@@ -32,6 +30,7 @@ I18N_TARGET_DIR := $(TARGET_DIR)/i18n
 I18N_SOURCES := $(wildcard ./*.all.json)
 I18N_TARGET := $(addprefix $(I18N_TARGET_DIR)/,$(I18N_SOURCES))
 
+STRING_DEFINES += github.com/genzj/goTApaper/cmd.Version=$(VERSION)
 STRING_DEFINES := github.com/genzj/goTApaper/cmd.GitCommit=${GIT_COMMIT}${GIT_DIRTY}
 STRING_DEFINES += github.com/genzj/goTApaper/cmd.VersionPrerelease=$(RELEASE)
 
@@ -45,18 +44,13 @@ help:
 	@echo
 	@echo 'Usage:'
 	@echo '    make build           Compile the project.'
-	@echo '    make build-alpine    Compile optimized for alpine linux.'
-	@echo '    make build-docker    Build inside an alpine docker container'
 	@echo '    make examples        Copy example files to target directory'
 	@echo '    make i18n            Copy translation files to i18n subdirectory under the target directory'
-	@echo '    make package         Build final docker image with just the go binary inside'
-	@echo '    make tag             Tag image created by package with latest, git commit and version'
 	@echo '    make test            Run tests on a compiled project.'
-	@echo '    make push            Push tagged images to registry'
 	@echo '    make clean           Clean the directory tree.'
 	@echo
 
-build: $(TARGET_DIR) example i18n $(BIN_TARGET)
+build: $(TARGET_DIR) build-all build-windows-console example i18n
 
 $(TARGET_DIR):
 	@test -e $(TARGET_DIR) || mkdir -p $(TARGET_DIR)
@@ -73,42 +67,19 @@ example: $(TARGET_DIR) $(EXAMPLE_TARGETS)
 $(TARGET_DIR)/%.example: %.example
 	cp $^ $@
 
-$(TARGET_DIR)/%-console.exe: $(GO_SOURCES)
+build-windows-console: $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) win32 console edition"
 	@echo "GOPATH=$(GOPATH)"
-	go build -ldflags "$(GO_LDFLAGS)" -o $@
+	cd $(TARGET_DIR) && \
+	    gox -arch "amd64 386" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
 
-$(TARGET_DIR)/%: $(GO_SOURCES)
+build-all: $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
-	go build -ldflags "$(GO_LDFLAGS) $(GO_DAEMON_LDFLAGS)" -o $@
-
-build-alpine:
-	@echo "building ${BIN_NAME} ${VERSION}"
-	@echo "GOPATH=${GOPATH}"
-	go build -ldflags '-w -linkmode external -extldflags "-static" -X github.com/genzj/goTApaper/cmd.GitCommit=${GIT_COMMIT}${GIT_DIRTY} -X github.com/genzj/goTApaper/cmd.VersionPrerelease=VersionPrerelease=RC' -o bin/${BIN_NAME}
-
-build-docker:
-	@echo "building ${BIN_NAME} ${VERSION}"
-	docker build -t goTApaper:build -f Dockerfile.build .
-	docker run --name=goTApaper -v $(GOPATH):/gopath/  goTApaper:build
-	docker rm -f goTApaper
-
-package:
-	@echo "building image ${BIN_NAME} ${VERSION} $(GIT_COMMIT)"
-	docker build --build-arg VERSION=${VERSION} --build-arg GIT_COMMIT=$(GIT_COMMIT) -t $(IMAGE_NAME):local .
-
-tag:
-	@echo "Tagging: latest ${VERSION} $(GIT_COMMIT)"
-	docker tag $(IMAGE_NAME):local $(IMAGE_NAME):$(GIT_COMMIT)
-	docker tag $(IMAGE_NAME):local $(IMAGE_NAME):${VERSION}
-	docker tag $(IMAGE_NAME):local $(IMAGE_NAME):latest
-
-push: tag
-	@echo "Pushing docker image to registry: latest ${VERSION} $(GIT_COMMIT)"
-	docker push $(IMAGE_NAME):$(GIT_COMMIT)
-	docker push $(IMAGE_NAME):${VERSION}
-	docker push $(IMAGE_NAME):latest
+	cd $(TARGET_DIR) && \
+	    GOX_WINDOWS_386_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
+	    GOX_WINDOWS_amd64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
+	    gox -arch "amd64 386" -os "windows linux" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
 	@test ! -e $(TARGET_DIR) || rm -rf $(TARGET_DIR)
