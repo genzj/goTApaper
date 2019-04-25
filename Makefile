@@ -2,14 +2,6 @@
 
 UNAME := $(shell uname)
 
-ifeq ($(UNAME), Linux)
-	BIN_NAME := goTApaper
-	GO_DAEMON_LDFLAGS :=
-else
-	BIN_NAME := goTApaper.exe goTApaper-console.exe
-	GO_DAEMON_LDFLAGS := -H windowsgui
-endif
-
 VERSION := $(shell git describe --match 'REV_*' --debug | sed -e's/-.*//' -e 's/REV_//' -e's/_/./g')
 RELEASE ?= DEV
 GIT_COMMIT=$(shell git rev-parse HEAD)
@@ -78,7 +70,7 @@ build-all: $(GO_SOURCES)
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    GOX_WINDOWS_386_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
-	    GOX_WINDOWS_amd64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
+	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    gox -arch "amd64 386" -os "windows linux" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
