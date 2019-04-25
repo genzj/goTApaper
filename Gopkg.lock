@@ -10,17 +10,6 @@
   version = "v1.4.1"
 
 [[projects]]
-  digest = "1:baab02a9f8f46ac64bed54bc4bfffc6654080cbb183614eb3278a6170d6060fd"
-  name = "github.com/ant0ine/go-json-rest"
-  packages = [
-    "rest",
-    "rest/trie",
-  ]
-  pruneopts = "UT"
-  revision = "ce4b71cdf7ba29ef443d704bd923f5bbf281ee30"
-  version = "v3.3.2"
-
-[[projects]]
   digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
   name = "github.com/fsnotify/fsnotify"
   packages = ["."]
@@ -244,7 +233,6 @@
   analyzer-version = 1
   input-imports = [
     "github.com/Sirupsen/logrus",
-    "github.com/ant0ine/go-json-rest/rest",
     "github.com/kardianos/osext",
     "github.com/smartystreets/goconvey",
     "github.com/spf13/cobra",
