@@ -23,6 +23,8 @@ var refreshCmd = &cobra.Command{
 func init() {
 	refreshCmd.PersistentFlags().String("setter", config.DefaultSetter, "setter to configure desktop wallpaper")
 	viper.BindPFlag("setter", refreshCmd.PersistentFlags().Lookup("setter"))
+	refreshCmd.PersistentFlags().Bool("force", false, "ignore history file and always download")
+	viper.BindPFlag("force", refreshCmd.PersistentFlags().Lookup("force"))
 	RootCmd.AddCommand(refreshCmd)
 }
 
@@ -54,7 +56,7 @@ func refresh() {
 	}
 
 	for _, name := range channels {
-		raw, _, format, err := channel.Channels.Run(name)
+		raw, _, format, err := channel.Channels.Run(name, viper.GetBool("force"))
 		if err != nil {
 			logrus.Error(err)
 			continue

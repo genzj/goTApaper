@@ -78,7 +78,7 @@ func findFit(table sizeTable) (int, string) {
 
 type NgPoTChannelProvider int
 
-func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, error) {
+func (_ NgPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, string, error) {
 	var toc picTable
 
 	historyManager := history.JsonHistoryManagerSingleton
@@ -143,7 +143,7 @@ func (_ NgPoTChannelProvider) Download() (*bytes.Reader, image.Image, string, er
 		"picture URL decided",
 	)
 
-	if h.Has(finalUrl) {
+	if !force && h.Has(finalUrl) {
 		logrus.Infoln("ngItem url alreay exists in history file, ignore.")
 		return nil, nil, "", nil
 	}

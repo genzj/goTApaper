@@ -3,12 +3,13 @@ package channel
 import (
 	"bytes"
 	"errors"
+	"image"
+	"io/ioutil"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/spf13/viper"
-	"image"
-	"io/ioutil"
 )
 
 const (
@@ -68,7 +69,7 @@ func bingFindFirstFit(urlBase string) (int, string) {
 
 type BingWallpaperChannelProvider int
 
-func (BingWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, string, error) {
+func (BingWallpaperChannelProvider) Download(force bool) (*bytes.Reader, image.Image, string, error) {
 	var response bingResponse
 
 	historyManager := history.JsonHistoryManagerSingleton
@@ -101,7 +102,7 @@ func (BingWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, stri
 	)
 
 	// TODO extract following part as util function
-	if h.Has(finalUrl) {
+	if !force && h.Has(finalUrl) {
 		logrus.Infoln("bing url alreay exists in history file, ignore.")
 		return nil, nil, "", nil
 	}

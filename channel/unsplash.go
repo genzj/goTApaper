@@ -3,12 +3,13 @@ package channel
 import (
 	"bytes"
 	"fmt"
-	"github.com/Sirupsen/logrus"
-	"github.com/genzj/goTApaper/util"
-	"github.com/spf13/viper"
 	"image"
 	"io/ioutil"
 	"net/url"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/genzj/goTApaper/util"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -84,7 +85,7 @@ func getPhotoQuery() string {
 
 type UnsplashWallpaperChannelProvider int
 
-func (UnsplashWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, string, error) {
+func (UnsplashWallpaperChannelProvider) Download(bool) (*bytes.Reader, image.Image, string, error) {
 	if getClientID() == "" {
 		return nil, nil, "", fmt.Errorf("unsplash API access key not set")
 	}
@@ -95,7 +96,8 @@ func (UnsplashWallpaperChannelProvider) Download() (*bytes.Reader, image.Image, 
 	}
 	logrus.Debugf("JSON loaded %+v", response)
 
-	// do my best to obey Unsplash API guidelines: https://help.unsplash.com/api-guidelines/more-on-each-guideline/guideline-triggering-a-download
+	// do my best to obey Unsplash API guidelines:
+	// https://help.unsplash.com/api-guidelines/more-on-each-guideline/guideline-triggering-a-download
 	go func() {
 		resp, err := util.GetInType(response.Links.Download, "")
 		if err != nil {
