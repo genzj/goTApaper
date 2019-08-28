@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"image"
-	_ "image/jpeg"
+	_ "image/jpeg" // for jpeg image codec
 	"io/ioutil"
 	"net/url"
 
@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	NG_CHANNEL_NAME = "ng-photo-of-today"
-	NG_BASE_URL     = "http://www.nationalgeographic.com/photography/photo-of-the-day/_jcr_content/.gallery.json"
+	ngChannelName = "ng-photo-of-today"
+	ngBaseURL     = "http://www.nationalgeographic.com/photography/photo-of-the-day/_jcr_content/.gallery.json"
 )
 
 type sizeTable map[int]string
@@ -43,10 +43,10 @@ func isBetter(strategy string, size int, lastSize int) bool {
 	case config.Unknown:
 		logrus.Fatalf("unknown strategy: %s", strategy)
 	case config.ByWidth:
-		if !viper.IsSet(NG_CHANNEL_NAME + ".width") {
-			logrus.Fatalf("%s must be set to use by-width strategy", NG_CHANNEL_NAME+".width")
+		if !viper.IsSet(ngChannelName + ".width") {
+			logrus.Fatalf("%s must be set to use by-width strategy", ngChannelName+".width")
 		}
-		return size == viper.GetInt(NG_CHANNEL_NAME+".width")
+		return size == viper.GetInt(ngChannelName+".width")
 	case config.LargestNoLogo:
 	case config.Largest:
 		return size > lastSize
@@ -59,8 +59,8 @@ func findFit(table sizeTable) (int, string) {
 	ret := ""
 	strategy := "largest"
 
-	if viper.IsSet(NG_CHANNEL_NAME + ".strategy") {
-		strategy = viper.GetString(NG_CHANNEL_NAME + ".strategy")
+	if viper.IsSet(ngChannelName + ".strategy") {
+		strategy = viper.GetString(ngChannelName + ".strategy")
 	}
 
 	if len(table) == 0 {
@@ -76,20 +76,20 @@ func findFit(table sizeTable) (int, string) {
 	return largest, ret
 }
 
-type NgPoTChannelProvider int
+type ngPoTChannelProvider int
 
-func (_ NgPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, string, error) {
+func (ngPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, string, error) {
 	var toc picTable
 
 	historyManager := history.JsonHistoryManagerSingleton
-	h, err := historyManager.Load(NG_CHANNEL_NAME)
+	h, err := historyManager.Load(ngChannelName)
 	if err != nil {
 		return nil, nil, "", errors.New("loading history failed")
 	}
 
-	logrus.Debugf("history of %s channel: %+v", NG_CHANNEL_NAME, h)
+	logrus.Debugf("history of %s channel: %+v", ngChannelName, h)
 
-	if err := util.ReadJson(NG_BASE_URL, &toc); err != nil {
+	if err := util.ReadJson(ngBaseURL, &toc); err != nil {
 		return nil, nil, "", err
 	}
 
@@ -122,19 +122,19 @@ func (_ NgPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, 
 		return nil, nil, "", err
 	}
 
-	downloadUrl, err := url.Parse(picURL)
+	downloadURL, err := url.Parse(picURL)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
-	finalUrl := base.ResolveReference(downloadUrl).String()
+	finalURL := base.ResolveReference(downloadURL).String()
 
 	logrus.WithField(
 		"width", width,
 	).WithField(
 		"picURL", picURL,
 	).WithField(
-		"finalUrl", finalUrl,
+		"finalUrl", finalURL,
 	).WithField(
 		"title", item.Title,
 	).WithField(
@@ -143,12 +143,12 @@ func (_ NgPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, 
 		"picture URL decided",
 	)
 
-	if !force && h.Has(finalUrl) {
+	if !force && h.Has(finalURL) {
 		logrus.Infoln("ngItem url alreay exists in history file, ignore.")
 		return nil, nil, "", nil
 	}
 
-	resp, err := util.GetInType(finalUrl, "image/jpeg")
+	resp, err := util.GetInType(finalURL, "image/jpeg")
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -168,13 +168,13 @@ func (_ NgPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, 
 	}
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
-	h.Mark(finalUrl)
+	h.Mark(finalURL)
 	historyManager.Save(h)
 
 	return raw, img, format, nil
 }
 
 func init() {
-	var me NgPoTChannelProvider
-	Channels.Register(NG_CHANNEL_NAME, me)
+	var me ngPoTChannelProvider
+	Channels.Register(ngChannelName, me)
 }

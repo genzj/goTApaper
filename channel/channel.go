@@ -8,6 +8,7 @@ import (
 	"github.com/genzj/goTApaper/util"
 )
 
+// Channel defines a wallpaper downloader
 type Channel interface {
 	Download(force bool) (*bytes.Reader, image.Image, string, error)
 }
@@ -24,9 +25,10 @@ func (m channelMap) Run(name string, force bool) (*bytes.Reader, image.Image, st
 	if v, ok := m.Get(name); ok {
 		ch := v.(Channel)
 		return ch.Download(force)
-	} else {
-		return nil, nil, "", fmt.Errorf("channel %s not registered", name)
 	}
+	return nil, nil, "", fmt.Errorf("channel %s not registered", name)
 }
 
+// Channels handles all registered channels
+// TODO make this variable local and add functions instead
 var Channels = channelMap{RegistryMap: util.RegistryMap{}}
