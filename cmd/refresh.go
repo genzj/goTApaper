@@ -11,8 +11,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-var setterName string
-
 var refreshCmd = &cobra.Command{
 	Use:   "refresh",
 	Short: "Trigger pic downloading and wallpaper setting",
@@ -23,8 +21,8 @@ var refreshCmd = &cobra.Command{
 }
 
 func init() {
-	refreshCmd.PersistentFlags().StringVar(&setterName, "setter", config.DefaultSetter, "setter to configure desktop wallpaper")
-	viper.BindPFlag("Setter", refreshCmd.PersistentFlags().Lookup("setter"))
+	refreshCmd.PersistentFlags().String("setter", config.DefaultSetter, "setter to configure desktop wallpaper")
+	viper.BindPFlag("setter", refreshCmd.PersistentFlags().Lookup("setter"))
 	RootCmd.AddCommand(refreshCmd)
 }
 
@@ -44,6 +42,7 @@ func refresh() {
 	wallpaperPath := config.GetWallpaperFileName()
 	channels := viper.GetStringSlice("channels")
 
+	setterName := viper.GetString("setter")
 	v, ok := actor.Setters.Get(setterName)
 	if !ok {
 		logrus.Panicf("setter \"%s\" not registered", setterName)
