@@ -37,14 +37,14 @@ type bingResponse struct {
 	Images []bingItem
 }
 
-func bingFindFirstFit(urlBase string) (int, string) {
+func bingFindFirstFit(setting *viper.Viper, urlBase string) (int, string) {
 	var finalURL string
 	largest := 0
 	ret := ""
 	strategy := "largest-no-logo"
 
-	if viper.IsSet(bingChannelName + ".strategy") {
-		strategy = viper.GetString(bingChannelName + ".strategy")
+	if setting.IsSet("strategy") {
+		strategy = setting.GetString("strategy")
 	}
 
 	logrus.Debugf("use strategy %s", strategy)
@@ -69,7 +69,7 @@ func bingFindFirstFit(urlBase string) (int, string) {
 
 type bingWallpaperChannelProvider int
 
-func (bingWallpaperChannelProvider) Download(force bool) (*bytes.Reader, image.Image, string, error) {
+func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
 	var response bingResponse
 
 	historyManager := history.JsonHistoryManagerSingleton
@@ -87,7 +87,7 @@ func (bingWallpaperChannelProvider) Download(force bool) (*bytes.Reader, image.I
 	logrus.Debugf("JSON loaded %+v", response)
 
 	item := response.Images[0]
-	width, finalURL := bingFindFirstFit(item.URLBase)
+	width, finalURL := bingFindFirstFit(setting, item.URLBase)
 
 	logrus.WithField(
 		"width", width,
@@ -102,7 +102,7 @@ func (bingWallpaperChannelProvider) Download(force bool) (*bytes.Reader, image.I
 	)
 
 	// TODO extract following part as util function
-	if !force && h.Has(finalURL) {
+	if !setting.GetBool("force") && h.Has(finalURL) {
 		logrus.Infoln("bing url alreay exists in history file, ignore.")
 		return nil, nil, "", nil
 	}

@@ -27,9 +27,9 @@ type photoItem struct {
 	}
 }
 
-func getClientID() string {
+func getClientID(setting *viper.Viper) string {
 	key := ""
-	if key = viper.GetString(unsplashChannelName + ".key"); key == "" {
+	if key = setting.GetString("key"); key == "" {
 		logrus.Fatalf(
 			"API access key must be set to %s, create a developer account for API key here: https://unsplash.com/oauth/applications",
 			unsplashChannelName+".key",
@@ -38,20 +38,20 @@ func getClientID() string {
 	return key
 }
 
-func getListQuery() string {
+func getListQuery(setting *viper.Viper) string {
 	v := url.Values{
-		"client_id": {getClientID()},
+		"client_id": {getClientID(setting)},
 	}
 
-	if orientation := viper.GetString(unsplashChannelName + ".orientation"); orientation != "" {
+	if orientation := setting.GetString("orientation"); orientation != "" {
 		v.Set("orientation", orientation)
 	}
 
-	if query := viper.GetString(unsplashChannelName + ".query"); query != "" {
+	if query := setting.GetString("query"); query != "" {
 		v.Set("query", query)
 	}
 
-	if viper.GetBool(unsplashChannelName + ".featured") {
+	if setting.GetBool("featured") {
 		v.Set("featured", "")
 	}
 
@@ -59,23 +59,23 @@ func getListQuery() string {
 	return v.Encode()
 }
 
-func getPhotoQuery() string {
+func getPhotoQuery(setting *viper.Viper) string {
 	v := url.Values{
-		"client_id": {getClientID()},
+		"client_id": {getClientID(setting)},
 		"fm":        {"jpg"},
 		"crop":      {"entropy"},
 	}
-	if viper.IsSet(unsplashChannelName + ".strategy") {
-		if "by-width" == viper.GetString(unsplashChannelName+".strategy") {
-			if !viper.IsSet(unsplashChannelName + ".width") {
+	if setting.IsSet("strategy") {
+		if "by-width" == setting.GetString("strategy") {
+			if !setting.IsSet("width") {
 				logrus.Fatalf("%s must be set to use by-width strategy", unsplashChannelName+".width")
 			} else {
-				v.Set("w", viper.GetString(unsplashChannelName+".width"))
+				v.Set("w", setting.GetString("width"))
 			}
 		}
 	}
 
-	for key, val := range viper.GetStringMapString(unsplashChannelName + ".image_parameters") {
+	for key, val := range setting.GetStringMapString("image_parameters") {
 		v.Set(key, val)
 	}
 
@@ -85,11 +85,11 @@ func getPhotoQuery() string {
 
 type unsplashWallpaperChannelProvider int
 
-func (unsplashWallpaperChannelProvider) Download(bool) (*bytes.Reader, image.Image, string, error) {
-	if getClientID() == "" {
+func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
+	if getClientID(setting) == "" {
 		return nil, nil, "", fmt.Errorf("unsplash API access key not set")
 	}
-	query := getListQuery()
+	query := getListQuery(setting)
 	response := photoItem{}
 	if err := util.ReadJson(unsplashGalleryURL+"?"+query, &response); err != nil {
 		return nil, nil, "", err
@@ -115,7 +115,7 @@ func (unsplashWallpaperChannelProvider) Download(bool) (*bytes.Reader, image.Ima
 		return nil, nil, "", fmt.Errorf("cannot get photo from unsplash API")
 	}
 
-	finalURL := response.URLs.Raw + getPhotoQuery()
+	finalURL := response.URLs.Raw + getPhotoQuery(setting)
 	resp, err := util.GetInType(finalURL, "image/jpeg")
 	if err != nil {
 		return nil, nil, "", err

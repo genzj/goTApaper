@@ -6,11 +6,12 @@ import (
 	"image"
 
 	"github.com/genzj/goTApaper/util"
+	"github.com/spf13/viper"
 )
 
 // Channel defines a wallpaper downloader
 type Channel interface {
-	Download(force bool) (*bytes.Reader, image.Image, string, error)
+	Download(*viper.Viper) (*bytes.Reader, image.Image, string, error)
 }
 
 type channelMap struct {
@@ -21,10 +22,10 @@ func (m *channelMap) Register(name string, ch Channel) {
 	m.RegistryMap.Register(name, ch)
 }
 
-func (m channelMap) Run(name string, force bool) (*bytes.Reader, image.Image, string, error) {
+func (m channelMap) Run(name string, setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
 	if v, ok := m.Get(name); ok {
 		ch := v.(Channel)
-		return ch.Download(force)
+		return ch.Download(setting)
 	}
 	return nil, nil, "", fmt.Errorf("channel %s not registered", name)
 }

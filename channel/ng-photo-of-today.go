@@ -37,16 +37,16 @@ type picTable struct {
 	Items []ngItem
 }
 
-func isBetter(strategy string, size int, lastSize int) bool {
+func isBetter(setting *viper.Viper, strategy string, size int, lastSize int) bool {
 	switch strategy {
 	default:
 	case config.Unknown:
 		logrus.Fatalf("unknown strategy: %s", strategy)
 	case config.ByWidth:
-		if !viper.IsSet(ngChannelName + ".width") {
+		if !setting.IsSet("width") {
 			logrus.Fatalf("%s must be set to use by-width strategy", ngChannelName+".width")
 		}
-		return size == viper.GetInt(ngChannelName+".width")
+		return size == setting.GetInt("width")
 	case config.LargestNoLogo:
 	case config.Largest:
 		return size > lastSize
@@ -54,13 +54,13 @@ func isBetter(strategy string, size int, lastSize int) bool {
 	return false
 }
 
-func findFit(table sizeTable) (int, string) {
+func findFit(setting *viper.Viper, table sizeTable) (int, string) {
 	largest := 0
 	ret := ""
 	strategy := "largest"
 
-	if viper.IsSet(ngChannelName + ".strategy") {
-		strategy = viper.GetString(ngChannelName + ".strategy")
+	if setting.IsSet("strategy") {
+		strategy = setting.GetString("strategy")
 	}
 
 	if len(table) == 0 {
@@ -68,7 +68,7 @@ func findFit(table sizeTable) (int, string) {
 	}
 
 	for size, picURL := range table {
-		if isBetter(strategy, size, largest) {
+		if isBetter(setting, strategy, size, largest) {
 			ret = picURL
 			largest = size
 		}
@@ -78,7 +78,7 @@ func findFit(table sizeTable) (int, string) {
 
 type ngPoTChannelProvider int
 
-func (ngPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, string, error) {
+func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
 	var toc picTable
 
 	historyManager := history.JsonHistoryManagerSingleton
@@ -112,7 +112,7 @@ func (ngPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, st
 		}
 	}
 
-	width, picURL := findFit(item.Sizes)
+	width, picURL := findFit(setting, item.Sizes)
 
 	if picURL == "" {
 		return nil, nil, "", errors.New("No picture URL found")
@@ -143,7 +143,7 @@ func (ngPoTChannelProvider) Download(force bool) (*bytes.Reader, image.Image, st
 		"picture URL decided",
 	)
 
-	if !force && h.Has(finalURL) {
+	if !setting.GetBool("force") && h.Has(finalURL) {
 		logrus.Infoln("ngItem url alreay exists in history file, ignore.")
 		return nil, nil, "", nil
 	}
