@@ -34,7 +34,7 @@ func daemon() {
 	})
 
 	for {
-		refresh()
+		refresh(nil)
 		interval := viper.GetInt("daemon.interval")
 		logrus.WithField("interval", interval).Debug("refresh over, going to sleep")
 		select {

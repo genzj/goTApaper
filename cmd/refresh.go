@@ -18,15 +18,16 @@ var refreshCmd = &cobra.Command{
 	Short: "Trigger pic downloading and wallpaper setting",
 	Long:  `Trigger pic downloading and wallpaper setting`,
 	Run: func(cmd *cobra.Command, args []string) {
-		refresh()
+		refresh(args)
 	},
 }
+
+var force bool
 
 func init() {
 	refreshCmd.PersistentFlags().String("setter", config.DefaultSetter, "setter to configure desktop wallpaper")
 	viper.BindPFlag("setter", refreshCmd.PersistentFlags().Lookup("setter"))
-	refreshCmd.PersistentFlags().Bool("force", false, "ignore history file and always download")
-	viper.BindPFlag("force", refreshCmd.PersistentFlags().Lookup("force"))
+	refreshCmd.PersistentFlags().BoolVar(&force, "force", false, "ignore history file and always download")
 	RootCmd.AddCommand(refreshCmd)
 	rand.Seed(time.Now().UnixNano())
 }
@@ -81,10 +82,18 @@ func collectActiveChannelsWithProbability() map[string]float32 {
 		logrus.Debugf("active channels with probability: %#v", ans)
 	}
 	return ans
-
 }
 
-func refresh() {
+func collectSpecifiedChannels(specifiedChannels []string) map[string]float32 {
+	ans := map[string]float32{}
+	for _, ch := range specifiedChannels {
+		ans[ch] = 1
+	}
+	logrus.Debugf("specified channels in args: %#v", ans)
+	return ans
+}
+
+func refresh(specifiedChannels []string) {
 	// reread config, in case refresh is called by daemon after a long sleep
 	// during which user updated the config file
 	if viper.ConfigFileUsed() == "" {
@@ -98,7 +107,12 @@ func refresh() {
 	}
 
 	wallpaperPath := config.GetWallpaperFileName()
-	activeChannels := collectActiveChannelsWithProbability()
+
+	activeChannels := collectSpecifiedChannels(specifiedChannels)
+
+	if len(activeChannels) == 0 {
+		activeChannels = collectActiveChannelsWithProbability()
+	}
 
 	setterName := viper.GetString("setter")
 	v, ok := actor.Setters.Get(setterName)
@@ -121,9 +135,10 @@ func refresh() {
 		} else if !setting.IsSet("type") {
 			l.Error("type of channel not set")
 			continue
-		} else {
-			l.Debugf("setting: %#v", setting.AllSettings())
 		}
+
+		setting.Set("force", force)
+		l.Debugf("setting: %#v", setting.AllSettings())
 
 		raw, _, format, err := channel.Channels.Run(setting.GetString("type"), setting)
 		if err != nil {
