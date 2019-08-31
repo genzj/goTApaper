@@ -89,7 +89,7 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 
 	logrus.Debugf("history of %s channel: %+v", ngChannelName, h)
 
-	if err := util.ReadJson(ngBaseURL, &toc); err != nil {
+	if err := util.ReadJSON(ngBaseURL, &toc); err != nil {
 		return nil, nil, "", err
 	}
 

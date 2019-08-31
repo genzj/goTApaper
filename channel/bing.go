@@ -80,7 +80,7 @@ func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 	logrus.Debugf("history of %s channel: %+v", bingChannelName, h)
 
 	// TODO add market as parameter
-	if err := util.ReadJson(bingGalleryURL, &response); err != nil {
+	if err := util.ReadJSON(bingGalleryURL, &response); err != nil {
 		return nil, nil, "", err
 	}
 

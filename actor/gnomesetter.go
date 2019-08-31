@@ -19,6 +19,7 @@ func setWithCommand(path string, arg ...string) error {
 	return nil
 }
 
+// Gnome3Setter works in gnome 3.x (gsettings)
 type Gnome3Setter int
 
 // Set can set wallpaper by gsetting cli tool
@@ -36,6 +37,7 @@ func (g Gnome3Setter) Set(filename string) error {
 	)
 }
 
+// Gnome2Setter works for gnome 2.x (gconftool-2)
 type Gnome2Setter int
 
 // Set can set wallpaper by gconftool

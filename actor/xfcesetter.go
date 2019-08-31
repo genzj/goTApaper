@@ -10,9 +10,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type XfceSetter int
+// Xfce4Setter works for XFCE4
+type Xfce4Setter int
 
-func (XfceSetter) Set(filename string) error {
+// Set wallpaper with xfconf-query
+func (Xfce4Setter) Set(filename string) error {
 	path, err := filepath.Abs(filename)
 	if err != nil {
 		return err
@@ -66,5 +68,5 @@ func (XfceSetter) Set(filename string) error {
 }
 
 func init() {
-	Setters.Register("xfce", XfceSetter(0))
+	Setters.Register("xfce4", Xfce4Setter(0))
 }

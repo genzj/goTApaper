@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"net/url"
 
-	"github.com/sirupsen/logrus"
 	"github.com/genzj/goTApaper/util"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -91,7 +91,7 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 	}
 	query := getListQuery(setting)
 	response := photoItem{}
-	if err := util.ReadJson(unsplashGalleryURL+"?"+query, &response); err != nil {
+	if err := util.ReadJSON(unsplashGalleryURL+"?"+query, &response); err != nil {
 		return nil, nil, "", err
 	}
 	logrus.Debugf("JSON loaded %+v", response)

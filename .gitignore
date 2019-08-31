@@ -89,3 +89,5 @@ history.json
 
 # GoLand files
 .idea/
+
+.vscode/

@@ -39,11 +39,11 @@ func (m JSONHistoryManager) Load(name string) (*History, error) {
 		return NewHistory(name), nil
 	}
 
-	if h, ok := m.skeleton.History[name]; ok {
+	h, ok := m.skeleton.History[name]
+	if ok {
 		return &h, nil
-	} else {
-		return NewHistory(name), nil
 	}
+	return NewHistory(name), nil
 }
 
 // Save to disk file
@@ -51,12 +51,12 @@ func (m *JSONHistoryManager) Save(h *History) error {
 	fn := config.GetHistoryFileName()
 
 	m.skeleton.History[h.Name] = *h
-	if bs, err := json.Marshal(m.skeleton); err != nil {
+	bs, err := json.Marshal(m.skeleton)
+	if err != nil {
 		logrus.WithField("error", err).Errorln("cannot save history file")
 		return err
-	} else {
-		return ioutil.WriteFile(fn, bs, os.FileMode(0644))
 	}
+	return ioutil.WriteFile(fn, bs, os.FileMode(0644))
 }
 
 // JSONHistoryManagerSingleton is the default instance

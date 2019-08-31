@@ -14,8 +14,8 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-// getHttpClient returns http client with proper proxy settings
-func getHttpClient() (*http.Client, error) {
+// getHTTPClient returns http client with proper proxy settings
+func getHTTPClient() (*http.Client, error) {
 	var err error
 	var parsed *url.URL
 
@@ -30,7 +30,7 @@ func getHttpClient() (*http.Client, error) {
 		// leave for http transport
 	default:
 		if parsed, err = url.Parse(conf); err != nil {
-			dialer, err = nil, err
+			dialer = nil
 		} else if parsed.Scheme == "socks5" {
 			// use x/net/proxy to handle socks5 proxy
 			dialer, err = proxy.FromURL(parsed, proxy.Direct)
@@ -54,8 +54,9 @@ func getHttpClient() (*http.Client, error) {
 
 }
 
+// Head sends requests with HEAD method
 func Head(url string, followRedirection bool) (*http.Response, error) {
-	httpClient, err := getHttpClient()
+	httpClient, err := getHTTPClient()
 	if err != nil {
 		logrus.Error("cannot initiate http client")
 		logrus.Fatal(err)
@@ -75,6 +76,7 @@ func Head(url string, followRedirection bool) (*http.Response, error) {
 	return resp, err
 }
 
+// IsReachableLink checks reachability of URL
 func IsReachableLink(url string) bool {
 	response, err := Head(url, false)
 	if err != nil {
@@ -84,8 +86,9 @@ func IsReachableLink(url string) bool {
 	return (response.StatusCode / 100) == 2
 }
 
+// GetInType sends a GET request and expects a response with certain content type
 func GetInType(url, expected string) (*http.Response, error) {
-	httpClient, err := getHttpClient()
+	httpClient, err := getHTTPClient()
 	if err != nil {
 		logrus.Error("cannot initiate http client")
 		logrus.Fatal(err)
@@ -112,7 +115,8 @@ func GetInType(url, expected string) (*http.Response, error) {
 	return resp, nil
 }
 
-func ReadJson(url string, obj interface{}) error {
+// ReadJSON sends request and parse its JSON response
+func ReadJSON(url string, obj interface{}) error {
 	resp, err := GetInType(url, "application/json")
 	if err != nil {
 		return err
