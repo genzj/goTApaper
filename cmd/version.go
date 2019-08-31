@@ -7,7 +7,7 @@ import (
 )
 
 // Version is the main version number that is being run at the moment.
-var Version = "0.0.0"
+var Version string
 
 // GitCommit is the commit that was compiled. This will be filled in by the compiler.
 var GitCommit string

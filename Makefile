@@ -2,7 +2,7 @@
 
 UNAME := $(shell uname)
 
-VERSION := $(shell git describe --match 'REV_*' --debug | sed -e's/-.*//' -e 's/REV_//' -e's/_/./g')
+VERSION := $(shell git describe --match 'v[0-9]*' --debug | sed -e's/-.*//' -e 's/v//')
 RELEASE ?= DEV
 GIT_COMMIT=$(shell git rev-parse HEAD)
 GIT_DIRTY=$(shell test -n "`git status --porcelain`" && echo "+CHANGES" || true)
@@ -22,8 +22,8 @@ I18N_TARGET_DIR := $(TARGET_DIR)/i18n
 I18N_SOURCES := $(wildcard ./*.all.json)
 I18N_TARGET := $(addprefix $(I18N_TARGET_DIR)/,$(I18N_SOURCES))
 
-STRING_DEFINES += github.com/genzj/goTApaper/cmd.Version=$(VERSION)
-STRING_DEFINES := github.com/genzj/goTApaper/cmd.GitCommit=${GIT_COMMIT}${GIT_DIRTY}
+STRING_DEFINES := github.com/genzj/goTApaper/cmd.Version=$(VERSION)
+STRING_DEFINES += github.com/genzj/goTApaper/cmd.GitCommit=${GIT_COMMIT}${GIT_DIRTY}
 STRING_DEFINES += github.com/genzj/goTApaper/cmd.VersionPrerelease=$(RELEASE)
 
 GO_LDFLAGS := -s -w
@@ -74,7 +74,7 @@ build-all: generate $(GO_SOURCES)
 	    gox -arch "amd64 386" -os "windows linux" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
-	@test ! -e $(TARGET_DIR) || rm -rf $(TARGET_DIR) && rm data/example_vfsdata.go
+	-rm -rf $(TARGET_DIR) data/example_vfsdata.go
 
 test:
 	go test ./...
