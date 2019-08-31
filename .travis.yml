@@ -1,6 +1,6 @@
 language: go
 go:
-- 1.x
+- 1.12.x
 before_install:
 - go get -u github.com/axw/gocov/gocov
 - go get golang.org/x/tools/cmd/cover
