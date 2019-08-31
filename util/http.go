@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	"golang.org/x/net/proxy"

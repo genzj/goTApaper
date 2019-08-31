@@ -6,7 +6,7 @@ import (
 	"image"
 	"io/ioutil"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/spf13/viper"
