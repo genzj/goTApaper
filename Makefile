@@ -1,4 +1,4 @@
-.PHONY: build build-all build-windows-console clean test help default example
+.PHONY: build build-all build-windows-console clean test help default example generate
 
 UNAME := $(shell uname)
 
@@ -15,8 +15,8 @@ TARGET_DIR := bin
 # make clean before make.
 GO_SOURCES := $(shell find -type f -name '*.go' -not -iwholename '*/vendor/*')
 
-EXAMPLE_SOURCES := $(wildcard ./*.example)
-EXAMPLE_TARGETS := $(addprefix $(TARGET_DIR)/,$(EXAMPLE_SOURCES))
+EXAMPLE_SOURCES := $(wildcard ./examples/*.example)
+EXAMPLE_TARGETS := $(addprefix $(TARGET_DIR)/,$(EXAMPLE_SOURCES:./examples/%=%))
 
 I18N_TARGET_DIR := $(TARGET_DIR)/i18n
 I18N_SOURCES := $(wildcard ./*.all.json)
@@ -56,16 +56,16 @@ $(I18N_TARGET_DIR)/%.all.json: %.all.json
 example: $(TARGET_DIR) $(EXAMPLE_TARGETS)
 
 
-$(TARGET_DIR)/%.example: %.example
+$(TARGET_DIR)/%.example: examples/%.example
 	cp $^ $@
 
-build-windows-console: $(GO_SOURCES)
+build-windows-console: generate $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) win32 console edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -arch "amd64 386" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
 
-build-all: $(GO_SOURCES)
+build-all: generate $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
@@ -74,7 +74,7 @@ build-all: $(GO_SOURCES)
 	    gox -arch "amd64 386" -os "windows linux" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
-	@test ! -e $(TARGET_DIR) || rm -rf $(TARGET_DIR)
+	@test ! -e $(TARGET_DIR) || rm -rf $(TARGET_DIR) && rm data/example_vfsdata.go
 
 test:
 	go test ./...
@@ -84,3 +84,6 @@ compile-messages:
 
 extract-messages:
 	goi18n *.all.json
+
+generate:
+	cd generate && { go generate -v || exit 1 ; cd .. ; }

@@ -1,4 +1,3 @@
-# vim: ft=yaml shiftwidth=2 softtabstop=2 expandtab
 # goTApaper configuration file
 #
 # this is a YAML 1.2 document, for details about its format, refer to: https://yaml.org/
@@ -76,7 +75,7 @@ channels:
     # bing-wallpaper downloads picture from Bing.com background
     # (https://www.bing.com)
     type: bing-wallpaper
-    # supported srategy:
+    # supported strategies:
     # - largest-no-logo (recommended)
     # - largest (use this for better resolution if you can live with the "Bing"
     #            logo. sometimes same as largest-no-logo if the photo that day
@@ -113,7 +112,7 @@ channels:
       # read https://unsplash.com/documentation#supported-parameters for details
       #
       # please be noted that 'by-width' strategy actually use "w=" parameter for
-      # photo resizing so the width option will be overriden if a "w" parameter
+      # photo resizing so the width option will be overridden if a "w" parameter
       # explicitly specified here
       q: 199
       dpr: 2
