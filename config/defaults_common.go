@@ -5,16 +5,20 @@ import (
 )
 
 const (
-	DefaultWallpaperFileName = "./wallpaper"
+	// DefaultWallpaperFileName specifies default wallpaper downloading path
+	DefaultWallpaperFileName = "wallpaper"
 
+	// DefaultHistoryFileName specifies default name of the history file
+	DefaultHistoryFileName = "history.json"
+
+	// DefaultDaemonInterval specifies default daemon downloading interval
 	DefaultDaemonInterval = 3600
 )
 
+// InitDefaultConfig creates default configuration
 func InitDefaultConfig() {
-	viper.SetDefault("history-file", "./history.json")
 	viper.SetDefault("language", "en-us")
 	viper.SetDefault("debug", false)
-	viper.SetDefault("wallpaper-file-name", "wallpaper")
 	viper.SetDefault("proxy", "direct")
 	viper.SetDefault("daemon.interval", 3600)
 	viper.SetDefault("channels", []string{"ng-photo-of-today", "bing-wallpaper"})

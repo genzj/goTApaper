@@ -5,8 +5,9 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/genzj/goTApaper/config"
+
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 type skeleton struct {
@@ -14,12 +15,14 @@ type skeleton struct {
 	History map[string]History
 }
 
-type JsonHistoryManager struct {
+// JSONHistoryManager keeps downloading records in JSON file
+type JSONHistoryManager struct {
 	skeleton skeleton
 }
 
-func (m JsonHistoryManager) Load(name string) (*History, error) {
-	fn := viper.GetString("history-file")
+// Load a JSON history file from disk
+func (m JSONHistoryManager) Load(name string) (*History, error) {
+	fn := config.GetHistoryFileName()
 	file, e := ioutil.ReadFile(fn)
 
 	if e != nil && os.IsNotExist(e) {
@@ -43,8 +46,9 @@ func (m JsonHistoryManager) Load(name string) (*History, error) {
 	}
 }
 
-func (m *JsonHistoryManager) Save(h *History) error {
-	fn := viper.GetString("history-file")
+// Save to disk file
+func (m *JSONHistoryManager) Save(h *History) error {
+	fn := config.GetHistoryFileName()
 
 	m.skeleton.History[h.Name] = *h
 	if bs, err := json.Marshal(m.skeleton); err != nil {
@@ -55,7 +59,8 @@ func (m *JsonHistoryManager) Save(h *History) error {
 	}
 }
 
-var JsonHistoryManagerSingleton = &JsonHistoryManager{
+// JSONHistoryManagerSingleton is the default instance
+var JSONHistoryManagerSingleton = &JSONHistoryManager{
 	skeleton: skeleton{
 		Meta:    make(map[string]string),
 		History: make(map[string]History),

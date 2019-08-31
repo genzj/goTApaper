@@ -6,9 +6,9 @@ import (
 	"image"
 	"io/ioutil"
 
-	"github.com/sirupsen/logrus"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -72,7 +72,7 @@ type bingWallpaperChannelProvider int
 func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
 	var response bingResponse
 
-	historyManager := history.JsonHistoryManagerSingleton
+	historyManager := history.JSONHistoryManagerSingleton
 	h, err := historyManager.Load(bingChannelName)
 	if err != nil {
 		return nil, nil, "", errors.New("loading history failed")

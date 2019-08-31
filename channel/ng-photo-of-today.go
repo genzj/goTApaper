@@ -8,10 +8,10 @@ import (
 	"io/ioutil"
 	"net/url"
 
-	"github.com/sirupsen/logrus"
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -81,7 +81,7 @@ type ngPoTChannelProvider int
 func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
 	var toc picTable
 
-	historyManager := history.JsonHistoryManagerSingleton
+	historyManager := history.JSONHistoryManagerSingleton
 	h, err := historyManager.Load(ngChannelName)
 	if err != nil {
 		return nil, nil, "", errors.New("loading history failed")

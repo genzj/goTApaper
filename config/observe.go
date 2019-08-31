@@ -7,21 +7,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type emitter struct {
-	*sync.Mutex
+// Emitter keeps configuration listening callbacks
+type Emitter struct {
+	l         *sync.Mutex
 	listeners map[string][]func(key string, old, new interface{})
 }
 
-func NewEmitter() *emitter {
-	return &emitter{
-		Mutex:     &sync.Mutex{},
+// NewEmitter creates a config event emitter
+func NewEmitter() *Emitter {
+	return &Emitter{
+		l:         &sync.Mutex{},
 		listeners: make(map[string][]func(key string, old, new interface{})),
 	}
 }
 
-func (e *emitter) Observe(pattern string, cb func(key string, old, new interface{})) {
-	e.Lock()
-	defer e.Unlock()
+// Observe configuration updates with certain patterns
+func (e *Emitter) Observe(pattern string, cb func(key string, old, new interface{})) {
+	e.l.Lock()
+	defer e.l.Unlock()
 	if l, ok := e.listeners[pattern]; ok {
 		e.listeners[pattern] = append(l, cb)
 	} else {
@@ -29,7 +32,7 @@ func (e *emitter) Observe(pattern string, cb func(key string, old, new interface
 	}
 }
 
-func (e *emitter) matched(topic string) ([]string, error) {
+func (e *Emitter) matched(topic string) ([]string, error) {
 	var err error
 	acc := []string{}
 	for k := range e.listeners {
@@ -46,9 +49,10 @@ func (e *emitter) matched(topic string) ([]string, error) {
 	return acc, err
 }
 
-func (e *emitter) Emit(key string, old, new interface{}) {
-	e.Lock()
-	defer e.Unlock()
+// Emit a configuration update event
+func (e *Emitter) Emit(key string, old, new interface{}) {
+	e.l.Lock()
+	defer e.l.Unlock()
 
 	matched, err := e.matched(key)
 	if err != nil {
@@ -65,10 +69,12 @@ func (e *emitter) Emit(key string, old, new interface{}) {
 
 var _emitter = NewEmitter()
 
+// Observe configuration changes by registering a call back function
 func Observe(pattern string, cb func(key string, old, new interface{})) {
 	_emitter.Observe(pattern, cb)
 }
 
+// Emit a configuration change event
 func Emit(key string, old, new interface{}) {
 	_emitter.Emit(key, old, new)
 }

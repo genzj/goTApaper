@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"github.com/genzj/goTApaper/config"
-	"github.com/genzj/goTApaper/util"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -33,61 +31,18 @@ func Execute() {
 	}
 }
 
-func initLogger() {
-	//file, _ := os.OpenFile("logrus.log", os.O_CREATE|os.O_WRONLY, 0666)
-
-	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
-	//logrus.SetOutput(file)
-
-	if viper.GetBool("debug") {
-		logrus.SetLevel(logrus.DebugLevel)
-		logrus.Debugln("Debug log enabled")
-	} else {
-		logrus.SetLevel(logrus.InfoLevel)
-	}
-}
-
 func initConfig() {
-	config.InitDefaultConfig()
-	viper.SetEnvPrefix(AppName)
-	viper.SetConfigType("yaml")
-
-	if cfgFile != "" { // enable ability to specify config file via flag
-		viper.SetConfigFile(cfgFile)
-	} else {
-		viper.SetConfigName("config")                // name of config file (without extension)
-		viper.AddConfigPath(".")                     // adding current directory as first search path
-		viper.AddConfigPath(util.ExecutableFolder()) // adding execution file directory as next search path
-	}
-
-	viper.AutomaticEnv() // read in environment variables that match
-
-	initLogger()
-	logrus.Debugln("config file searching folder: ", util.ExecutableFolder())
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		logrus.Debugln("Using config file:", viper.ConfigFileUsed())
-	} else if cfgFile != "" {
-		logrus.WithFields(logrus.Fields{
-			"CfgFile": cfgFile,
-		}).Fatalf("Config File is not readable: %s", err)
-	} else {
-		logrus.Debugln("No config file found, use default settings")
-	}
-	initLogger() // intentionally repeat, in case config file updates settings
-	logrus.Debugf("%+v", viper.AllSettings())
-
-	config.Observe("debug", func(_ string, _, _ interface{}) {
-		initLogger()
-	})
+	config.SetAppName(AppName)
+	config.EnsureAppDir()
+	config.LoadConfig(cfgFile)
 }
 
 func init() {
 	// disable mouse trap, enable start from windows explore
 	cobra.MousetrapHelpText = ""
 	cobra.OnInitialize(initConfig)
-	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config-file", "c", "", "config file (default is ./config.yaml in the folder of app executable binary.)")
-	RootCmd.PersistentFlags().String("history-file", "", "history file (default is ./history.json in the folder of app executable binary.)")
+	RootCmd.PersistentFlags().StringVarP(&cfgFile, "config-file", "c", "", "config file (default is the first config.yaml found in ~/.goTApaper or the folder of app executable binary.)")
+	RootCmd.PersistentFlags().String("history-file", "", "history file (default is ~/.goTApaper/history.json)")
 	viper.BindPFlag("history-file", RootCmd.PersistentFlags().Lookup("history-file"))
 	RootCmd.PersistentFlags().StringVar(&lang, "lang", "en-us", "language used for display, in xx-YY format.")
 	viper.BindPFlag("language", RootCmd.PersistentFlags().Lookup("lang"))

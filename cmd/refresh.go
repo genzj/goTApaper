@@ -5,10 +5,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/genzj/goTApaper/actor"
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
