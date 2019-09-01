@@ -61,7 +61,7 @@ func EnsureAppDir() {
 	}
 }
 
-// SaveConfig dump configuraitons into a disk file
+// SaveConfig dump configurations into a disk file
 func SaveConfig() error {
 	fn := viper.ConfigFileUsed()
 	if fn == "" {
