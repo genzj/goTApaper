@@ -16,6 +16,9 @@ func setWithCommand(path string, arg ...string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	go func() {
+		cmd.Wait()
+	}()
 	return nil
 }
 

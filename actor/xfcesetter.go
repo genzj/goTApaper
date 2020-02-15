@@ -30,6 +30,9 @@ func (Xfce4Setter) Set(filename string) error {
 	if err != nil {
 		logrus.Errorf("cannot read xfce4 desktop settings: %s", string(bs))
 	}
+	go func() {
+		cmd.Wait()
+	}()
 
 	for _, line := range strings.Split(string(bs), "\n") {
 		logrus.Debugf("xfce-config output %v", line)
