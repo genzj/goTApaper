@@ -71,7 +71,7 @@ build-all: generate $(GO_SOURCES)
 	cd $(TARGET_DIR) && \
 	    GOX_WINDOWS_386_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
-	    gox -arch "amd64 386" -os "windows linux" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	    gox -arch "amd64 386" -os "windows linux" -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go

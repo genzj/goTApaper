@@ -4,23 +4,8 @@ package actor
 
 import (
 	"fmt"
-	"os/exec"
 	"path/filepath"
-
-	"github.com/sirupsen/logrus"
 )
-
-func setWithCommand(path string, arg ...string) error {
-	cmd := exec.Command(path, arg...)
-	logrus.Debugf("executing setter with command %s %v", path, arg)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() {
-		cmd.Wait()
-	}()
-	return nil
-}
 
 // Gnome3Setter works in gnome 3.x (gsettings)
 type Gnome3Setter int
