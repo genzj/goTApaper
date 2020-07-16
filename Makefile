@@ -13,7 +13,7 @@ TARGET_DIR := bin
 # NOTE: I exclude the vendor source folder because it's TOO HUGE!
 # So after modify vendor source (rarely happens) or glide-update (may happen),
 # make clean before make.
-GO_SOURCES := $(shell find -type f -name '*.go' -not -iwholename '*/vendor/*')
+GO_SOURCES := $(shell find . -type f -name '*.go' -not -iwholename '*/vendor/*')
 
 EXAMPLE_SOURCES := $(wildcard ./examples/*.example)
 EXAMPLE_TARGETS := $(addprefix $(TARGET_DIR)/,$(EXAMPLE_SOURCES:./examples/%=%))
