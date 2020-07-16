@@ -42,7 +42,7 @@ daemon:
 # which enable the corresponding channel subjected to the specified probability.
 # The probability should be in range of [0, 1] which stands for never and always
 # respectively.
-# 
+#
 # Using probabilities less <1.0 is recommended for those channel types which always
 # return a new photo (e.g. unsplash) at every request so that other channels
 # following it can get a chance to run.
@@ -57,6 +57,41 @@ active-channels:
   # - unsplash-kw-color: 0.5
   # as last item it will always be run no matter what probability set here
   # - unsplash-kw-water
+
+# unsplash channels share a lot of common settings so gather them into a
+# reusable section with anchor to take advantage of YAML map merging,
+# see https://yaml.org/type/merge.html
+unsplash-common-settings: &unsplash-common-settings
+  # unsplash downloads with its random picture API, read its doc here:
+  #     https://unsplash.com/documentation#get-a-random-photo
+  # NOTE: you'll need an API key to download from unsplash. Get your key according
+  # to this doc: https://unsplash.com/documentation#creating-a-developer-account
+  # NO, I cannot offer one according to unsplash's API guideline here:
+  # https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines
+  type: unsplash
+  # set your key here
+  key: unsplash-api-key-id
+
+  # supported strategy:
+  # - by-width (recommended, remember to set the width also)
+  # - other strategies all download raw links without any scaling
+  strategy: by-width
+  width: 1920
+  # one of landscape, portrait, or squarish, read the unsplash API doc for details
+  orientation: landscape
+  # limit selection to featured photos
+  # read the unsplash API doc for details
+  featured: yes
+  image_parameters:
+    # parameters to be appended to unsplash picture link, can be used to modify
+    # image size or quality.
+    # read https://unsplash.com/documentation#supported-parameters for details
+    #
+    # please be noted that 'by-width' strategy actually use "w=" parameter for
+    # photo resizing so the width option will be overridden if a "w" parameter
+    # explicitly specified here
+    q: 100
+    dpr: 2
 
 # channel definitions. read comments of each channel type for details
 channels:
@@ -84,49 +119,12 @@ channels:
     strategy: largest-no-logo
 
   unsplash-kw-color:
-    # unsplash downloads with its random picture API, read its doc here:
-    #     https://unsplash.com/documentation#get-a-random-photo
-    # NOTE: you'll need an API key to download from unsplash. Get your key according
-    # to this doc: https://unsplash.com/documentation#creating-a-developer-account
-    # NO, I cannot offer one according to unsplash's API guideline here:
-    # https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines
-    type: unsplash
-    # set your key here
-    key: unsplash-api-key-id
-
-    # supported strategy:
-    # - by-width (recommended, remember to set the width also)
-    # - other strategies all download raw links without any scaling
-    strategy: by-width
-    width: 1920
+    <<: *unsplash-common-settings
     # keyword used for photo searching
     query: color
-    # one of landscape, portrait, or squarish, read the unsplash API doc for details
-    orientation: landscape
-    # limit selection to featured photos
-    # read the unsplash API doc for details
-    featured: yes
-    image_parameters:
-      # parameters to be appended to unsplash picture link, can be used to modify
-      # image size or quality.
-      # read https://unsplash.com/documentation#supported-parameters for details
-      #
-      # please be noted that 'by-width' strategy actually use "w=" parameter for
-      # photo resizing so the width option will be overridden if a "w" parameter
-      # explicitly specified here
-      q: 100
-      dpr: 2
 
   # you can define multiple instances of same type with different parameters
   unsplash-kw-water:
-    type: unsplash
-    strategy: by-width
-    width: 1920
-    key: unsplash-api-key-id
+    <<: *unsplash-common-settings
     query: water
-    orientation: landscape
-    # limit selection to featured photos
-    featured: yes
-    image_parameters:
-      q: 100
-      dpr: 2
+
