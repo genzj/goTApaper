@@ -1,8 +1,11 @@
 language: go
-os: linux
+os:
+  - linux
+  - windows
+
 dist: bionic
 go:
-- 1.14.x
+  - 1.14.x
 cache:
   directories:
     - $GOPATH/pkg/mod
@@ -11,13 +14,15 @@ env:
     - GO111MODULE=on
     - RELEASE=
 before_install:
-- go get -u github.com/axw/gocov/gocov
-- go get golang.org/x/tools/cmd/cover
-- go get github.com/mitchellh/gox
+  - go get -u github.com/axw/gocov/gocov
+  - go get golang.org/x/tools/cmd/cover
+  - go get github.com/mitchellh/gox
+
 script:
-- make build
-- make windows
-- make test
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then make build; fi
+  - if [ "$TRAVIS_OS_NAME" = "windows" ]; then make build-windows; fi
+  - make test
+
 deploy:
   provider: releases
   edge: true
