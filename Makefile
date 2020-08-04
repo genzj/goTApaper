@@ -65,7 +65,7 @@ build-windows-console: generate $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win console edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
-	    gox -arch "amd64 386" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
+	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
 
 build-windows-gui: generate $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win gui edition"
@@ -73,7 +73,7 @@ build-windows-gui: generate $(GO_SOURCES)
 	cd $(TARGET_DIR) && \
 	    GOX_WINDOWS_386_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
-	    gox -arch "amd64 386" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 build-other: generate $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
