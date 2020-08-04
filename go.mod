@@ -3,6 +3,7 @@ module github.com/genzj/goTApaper
 go 1.12
 
 require (
+	github.com/ProtonMail/go-autostart v0.0.0-20181114175602-c5272053443a
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/magiconair/properties v1.8.1 // indirect
