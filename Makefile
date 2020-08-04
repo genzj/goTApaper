@@ -42,7 +42,9 @@ help:
 	@echo '    make clean           Clean the directory tree.'
 	@echo
 
-build: $(TARGET_DIR) build-all build-windows-console example i18n
+build: $(TARGET_DIR) build-other example i18n
+
+build-windows: $(TARGET_DIR) build-windows-gui build-windows-console example i18n
 
 $(TARGET_DIR):
 	@test -e $(TARGET_DIR) || mkdir -p $(TARGET_DIR)
@@ -60,18 +62,24 @@ $(TARGET_DIR)/%.example: examples/%.example
 	cp $^ $@
 
 build-windows-console: generate $(GO_SOURCES)
-	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) win32 console edition"
+	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win console edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -arch "amd64 386" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
 
-build-all: generate $(GO_SOURCES)
-	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
+build-windows-gui: generate $(GO_SOURCES)
+	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win gui edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    GOX_WINDOWS_386_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
-	    gox -arch "amd64 386" -os "windows linux" -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	    gox -arch "amd64 386" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+
+build-other: generate $(GO_SOURCES)
+	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
+	@echo "GOPATH=$(GOPATH)"
+	cd $(TARGET_DIR) && \
+	    gox -arch "amd64 386" -os "linux" -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go
