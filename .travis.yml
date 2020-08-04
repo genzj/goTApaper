@@ -14,6 +14,7 @@ env:
     - GO111MODULE=on
     - RELEASE=
 before_install:
+  - if [ "$TRAVIS_OS_NAME" = "windows" ]; then choco install make; fi
   - go get -u github.com/axw/gocov/gocov
   - go get golang.org/x/tools/cmd/cover
   - go get github.com/mitchellh/gox
