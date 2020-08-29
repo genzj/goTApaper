@@ -142,20 +142,24 @@ func refresh(specifiedChannels []string) {
 		setting.Set("force", force)
 		l.Debugf("setting: %#v", setting.AllSettings())
 
-		raw, img, format, err := channel.Channels.Run(setting.GetString("type"), setting)
+		raw, img, meta, err := channel.Channels.Run(setting.GetString("type"), setting)
 		if err != nil {
 			l.Error(err)
 			continue
 		}
+
+		meta.Channel = setting.GetString("type")
+		meta.ChannelKey = name
+		l.Debugf("picture metadata %##v", meta)
 
 		if raw == nil || img == nil {
 			l.Infoln("no image downloaded")
 			continue
 		}
 
-		newImg, err := watermark.Render(img)
+		newImg, err := watermark.Render(img, meta)
 
-		wallpaperFileName := wallpaperPath + "." + format
+		wallpaperFileName := wallpaperPath + "." + meta.Format
 
 		out, err := os.Create(wallpaperFileName)
 		if err != nil {

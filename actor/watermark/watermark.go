@@ -4,8 +4,8 @@ import (
 	"image"
 	"strings"
 	"text/template"
-	"time"
 
+	"github.com/genzj/goTApaper/channel"
 	"github.com/spf13/viper"
 
 	"github.com/sirupsen/logrus"
@@ -27,15 +27,8 @@ type watermarkGroups struct {
 	Watermark []watermarkSetting `mapstructure:"watermark"`
 }
 
-type watermarkContext struct {
-	Title        string
-	Credit       string
-	UploadTime   time.Time
-	DownloadTime time.Time
-}
-
 // Render watermark to the given image
-func Render(im image.Image) (image.Image, error) {
+func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	groups := watermarkGroups{}
 	if err := viper.Unmarshal(&groups); err != nil {
 		logrus.WithError(err).Warn(
@@ -60,12 +53,7 @@ func Render(im image.Image) (image.Image, error) {
 		)
 
 		builder := &strings.Builder{}
-		if err := template.Execute(builder, watermarkContext{
-			Title:        "anything",
-			Credit:       "ooohhhh",
-			UploadTime:   time.Now(),
-			DownloadTime: time.Now(),
-		}); err != nil {
+		if err := template.Execute(builder, meta); err != nil {
 			logrus.WithError(err).Warnf(
 				"execute template of %d-th template failed, skip", idx,
 			)

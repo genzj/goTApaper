@@ -7,6 +7,8 @@ import (
 	_ "image/jpeg" // for jpeg image codec
 	"io/ioutil"
 	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/history"
@@ -17,24 +19,33 @@ import (
 
 const (
 	ngChannelName = "ng-photo-of-today"
-	ngBaseURL     = "http://www.nationalgeographic.com/photography/photo-of-the-day/_jcr_content/.gallery.json"
+	ngBaseURL     = "https://www.nationalgeographic.com/photography/photo-of-the-day/_jcr_content/.gallery.json"
 )
 
 type sizeTable map[int]string
 
+type ngRendition struct {
+	Width string
+	URL   string `json:"uri"`
+}
+
+type ngImage struct {
+	Title      string
+	Caption    string
+	Credit     string
+	URL        string `json:"uri"`
+	Renditions []ngRendition
+	Height     int
+	Width      int
+}
+
 type ngItem struct {
-	Title       string
-	Caption     string
-	Credit      string
-	URL         string
-	Sizes       sizeTable
+	Image       ngImage `json:"image"`
 	PublishDate string
-	Height      int
-	Width       int
 }
 
 type picTable struct {
-	Items []ngItem
+	Items []ngItem `json:"items"`
 }
 
 func isBetter(setting *viper.Viper, strategy string, size int, lastSize int) bool {
@@ -54,7 +65,7 @@ func isBetter(setting *viper.Viper, strategy string, size int, lastSize int) boo
 	return false
 }
 
-func findFit(setting *viper.Viper, table sizeTable) (int, string) {
+func findFit(setting *viper.Viper, renditions []ngRendition) (int, string) {
 	largest := 0
 	ret := ""
 	strategy := "largest"
@@ -63,13 +74,20 @@ func findFit(setting *viper.Viper, table sizeTable) (int, string) {
 		strategy = setting.GetString("strategy")
 	}
 
-	if len(table) == 0 {
+	if len(renditions) == 0 {
 		return 0, ret
 	}
 
-	for size, picURL := range table {
+	for _, rendition := range renditions {
+		size, err := strconv.Atoi(rendition.Width)
+		if err != nil {
+			logrus.WithError(err).Warnf(
+				"width in %+v is not an integer, ignore", rendition,
+			)
+			continue
+		}
 		if isBetter(setting, strategy, size, largest) {
-			ret = picURL
+			ret = rendition.URL
 			largest = size
 		}
 	}
@@ -78,28 +96,46 @@ func findFit(setting *viper.Viper, table sizeTable) (int, string) {
 
 type ngPoTChannelProvider int
 
-func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
+func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	var toc picTable
 
 	historyManager := history.JSONHistoryManagerSingleton
 	h, err := historyManager.Load(ngChannelName)
 	if err != nil {
-		return nil, nil, "", errors.New("loading history failed")
+		return nil, nil, nil, errors.New("loading history failed")
 	}
 
 	logrus.Debugf("history of %s channel: %+v", ngChannelName, h)
 
 	if err := util.ReadJSON(ngBaseURL, &toc); err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, err
 	}
+	logrus.Debugf("JSON parsed: %#v", toc)
 
 	if len(toc.Items) < 1 {
-		return nil, nil, "", errors.New("No picture items found")
+		return nil, nil, nil, errors.New("No picture items found")
 	}
 
-	item := toc.Items[0]
+	item := toc.Items[0].Image
 
-	if len(item.Sizes) == 0 && item.Width > 0 {
+	meta := &PictureMeta{
+		Title:        item.Title,
+		Caption:      item.Caption,
+		Credit:       item.Credit,
+		DownloadTime: time.Now(),
+		UploadTime:   time.Now(),
+	}
+	if meta.UploadTime, err = time.ParseInLocation(
+		"January 02, 2006", toc.Items[0].PublishDate, time.UTC,
+	); err != nil {
+		logrus.WithError(err).Warnf(
+			"cannot parse publish date of %+v", toc.Items[0],
+		)
+	} else {
+		meta.UploadTime = meta.UploadTime.Local()
+	}
+
+	if len(item.Renditions) == 0 && item.Width > 0 {
 		logrus.WithField(
 			"width", item.Width,
 		).WithField(
@@ -107,24 +143,26 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 		).Debug(
 			"only one candidate",
 		)
-		item.Sizes = sizeTable{
-			item.Width: item.URL,
+		item.Renditions = []ngRendition{
+			ngRendition{
+				Width: strconv.FormatInt(int64(item.Width), 10), URL: item.URL,
+			},
 		}
 	}
 
-	width, picURL := findFit(setting, item.Sizes)
+	width, picURL := findFit(setting, item.Renditions)
 
 	if picURL == "" {
-		return nil, nil, "", errors.New("No picture URL found")
+		return nil, nil, meta, errors.New("No picture URL found")
 	}
 	base, err := url.Parse(item.URL)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	downloadURL, err := url.Parse(picURL)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	finalURL := base.ResolveReference(downloadURL).String()
@@ -145,33 +183,34 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 
 	if !setting.GetBool("force") && h.Has(finalURL) {
 		logrus.Infoln("ngItem url alreay exists in history file, ignore.")
-		return nil, nil, "", nil
+		return nil, nil, meta, nil
 	}
 
 	resp, err := util.GetInType(finalURL, "image/jpeg")
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	defer resp.Body.Close()
 
 	bs, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	raw := bytes.NewReader(bs)
 	reader2 := bytes.NewReader(bs)
 	img, format, err := image.Decode(reader2)
 	if err != nil {
-		return raw, nil, "", err
+		return raw, nil, meta, err
 	}
+	meta.Format = format
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
 	h.Mark(finalURL)
 	historyManager.Save(h)
 
-	return raw, img, format, nil
+	return raw, img, meta, nil
 }
 
 func init() {

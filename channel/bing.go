@@ -5,6 +5,8 @@ import (
 	"errors"
 	"image"
 	"io/ioutil"
+	"strings"
+	"time"
 
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
@@ -35,6 +37,29 @@ type bingItem struct {
 
 type bingResponse struct {
 	Images []bingItem
+}
+
+const bingCreditStarter = '('
+const bingCreditStopper = ')'
+
+func splitBingCopyright(copyright string, meta *PictureMeta) {
+	offset := strings.IndexFunc(copyright, func(r rune) bool { return r == bingCreditStarter })
+	if offset < 0 {
+		logrus.Warnf("credit not found in %s", copyright)
+		meta.Title = copyright
+		meta.Credit = "unknown"
+		return
+	}
+
+	meta.Title = strings.TrimSpace(copyright[0:offset])
+
+	ending := strings.IndexFunc(copyright[offset:], func(r rune) bool { return r == bingCreditStopper })
+	if ending < 0 {
+		ending = len(copyright)
+	} else {
+		ending += offset
+	}
+	meta.Credit = copyright[offset+1 : ending]
 }
 
 func bingFindFirstFit(setting *viper.Viper, urlBase string) (int, string) {
@@ -69,19 +94,19 @@ func bingFindFirstFit(setting *viper.Viper, urlBase string) (int, string) {
 
 type bingWallpaperChannelProvider int
 
-func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
+func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	var response bingResponse
 
 	historyManager := history.JSONHistoryManagerSingleton
 	h, err := historyManager.Load(bingChannelName)
 	if err != nil {
-		return nil, nil, "", errors.New("loading history failed")
+		return nil, nil, nil, errors.New("loading history failed")
 	}
 	logrus.Debugf("history of %s channel: %+v", bingChannelName, h)
 
 	// TODO add market as parameter
 	if err := util.ReadJSON(bingGalleryURL, &response); err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, err
 	}
 
 	logrus.Debugf("JSON loaded %+v", response)
@@ -101,15 +126,29 @@ func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 		"picture URL decided",
 	)
 
+	// fill metadata
+	meta := &PictureMeta{}
+	splitBingCopyright(item.Copyright, meta)
+	if meta.UploadTime, err = time.ParseInLocation(
+		"200601020304", item.FullStartDate, time.UTC,
+	); err != nil {
+		logrus.Warnf("cannot understand upload time %s", item.FullStartDate)
+	} else {
+		// use local time so that users can Format directly in watermark
+		// templates
+		meta.UploadTime = meta.UploadTime.Local()
+	}
+	meta.DownloadTime = time.Now()
+
 	// TODO extract following part as util function
 	if !setting.GetBool("force") && h.Has(finalURL) {
 		logrus.Infoln("bing url alreay exists in history file, ignore.")
-		return nil, nil, "", nil
+		return nil, nil, meta, nil
 	}
 
 	resp, err := util.GetInType(finalURL, "image/jpeg")
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	defer func() {
@@ -118,21 +157,22 @@ func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 
 	bs, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	raw := bytes.NewReader(bs)
 	reader2 := bytes.NewReader(bs)
 	img, format, err := image.Decode(reader2)
 	if err != nil {
-		return raw, nil, "", err
+		return raw, nil, meta, err
 	}
+	meta.Format = format
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
 	h.Mark(finalURL)
 	_ = historyManager.Save(h)
 
-	return raw, img, format, nil
+	return raw, img, meta, nil
 }
 
 func init() {

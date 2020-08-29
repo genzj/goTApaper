@@ -6,6 +6,8 @@ import (
 	"image"
 	"io/ioutil"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
@@ -19,6 +21,13 @@ const (
 )
 
 type photoItem struct {
+	UpdatedAt      string `json:"updated_at"`
+	Description    string
+	AltDescription string `json:"alt_description"`
+
+	User struct {
+		Name string
+	}
 	URLs struct {
 		Raw string
 	}
@@ -85,16 +94,39 @@ func getPhotoQuery(setting *viper.Viper) string {
 
 type unsplashWallpaperChannelProvider int
 
-func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, string, error) {
+func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	if getClientID(setting) == "" {
-		return nil, nil, "", fmt.Errorf("unsplash API access key not set")
+		return nil, nil, nil, fmt.Errorf("unsplash API access key not set")
 	}
 	query := getListQuery(setting)
 	response := photoItem{}
 	if err := util.ReadJSON(unsplashGalleryURL+"?"+query, &response); err != nil {
-		return nil, nil, "", err
+		return nil, nil, nil, err
 	}
 	logrus.Debugf("JSON loaded %+v", response)
+
+	meta := &PictureMeta{
+		Title:        response.Description,
+		Credit:       response.User.Name,
+		DownloadTime: time.Now(),
+		UploadTime:   time.Now(),
+	}
+	if meta.Title == "" {
+		meta.Title = response.AltDescription
+	}
+	meta.Title = strings.Title(meta.Title)
+
+	var err error
+	if meta.UploadTime, err = time.Parse(
+		"2006-01-02T15:04:05-07:00", response.UpdatedAt,
+	); err != nil {
+		logrus.WithError(err).Warnf(
+			"cannot parse publish date of %+v", response,
+		)
+	} else {
+		meta.UploadTime = meta.UploadTime.Local()
+		logrus.Debugf("parsed time: %s", meta.UploadTime.Format("2006-01-02T15:04:05-07:00"))
+	}
 
 	// do my best to obey Unsplash API guidelines:
 	// https://help.unsplash.com/api-guidelines/more-on-each-guideline/guideline-triggering-a-download
@@ -112,13 +144,13 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 		logrus.Error(
 			"no photo URL received, ensure API secret key is correctly set in the config",
 		)
-		return nil, nil, "", fmt.Errorf("cannot get photo from unsplash API")
+		return nil, nil, meta, fmt.Errorf("cannot get photo from unsplash API")
 	}
 
 	finalURL := response.URLs.Raw + getPhotoQuery(setting)
 	resp, err := util.GetInType(finalURL, "image/jpeg")
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	defer func() {
@@ -127,18 +159,19 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 
 	bs, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, meta, err
 	}
 
 	raw := bytes.NewReader(bs)
 	reader2 := bytes.NewReader(bs)
 	img, format, err := image.Decode(reader2)
 	if err != nil {
-		return raw, nil, "", err
+		return raw, nil, meta, err
 	}
+	meta.Format = format
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
-	return raw, img, format, nil
+	return raw, img, meta, nil
 }
 
 func init() {

@@ -56,18 +56,18 @@ watermark:
     font: NotoSans-Regular.ttf
 
     # point size of the font
-    point: 12
+    point: 15
 
     # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
     # (rrggbbaa) notation. remember to wrap the value in quotes when it only
     # contains digitals (e.g. "11223344") or yaml parser will interpret it as
     # an integer
-    color: 1111117f
+    color: eeeeee80
 
     # position of watermark lines, can be one of top-left, top-center,
     # top-right middle-left, middle-center, middle-right, bottom-left,
     # bottom-center, bottom-right
-    position: bottom-right
+    position: bottom-center
 
     # Horizontal/vertical padding, offset to left-or-right/top-or-bottom edge
     # of the picture
@@ -85,7 +85,7 @@ watermark:
     linespace: 1.2
 
     # Alignment of lines. It can be left, center or right
-    alignment: right
+    alignment: center
     # Golang Template used to generate watermark, can contain multiple lines.
     # refer to https://golang.org/pkg/text/template/ for golang template syntax
     # fields can be used in the template:
@@ -94,8 +94,8 @@ watermark:
     #   UploadTime time: when is the wallpaper uploaded
     #   DownloadTime time: when is the wallpaper downloaded
     template: |
-      {{.Title}} ({{.Credit}})
-      @{{.UploadTime.Format "2006 Jan 2 15:04:05"}}
+      {{.Title}} ({{.Credit}} | {{.ChannelKey}})
+      {{.UploadTime.Format "2006 Jan 2 15:04:05"}}
 
 # The active-channels is a list containing keys of enabled channel definitions.
 # Items can either be plain string names which enable corresponding channels

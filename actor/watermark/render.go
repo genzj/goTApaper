@@ -2,6 +2,7 @@ package watermark
 
 import (
 	"image"
+	"math"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -51,12 +52,13 @@ func (r render) loadColor() {
 	r.ctx.SetHexColor(r.setting.Color)
 }
 func (r render) loadFont() error {
+	pixelDense := float64(r.ctx.Height() / 1080.0)
 	fontFile, err := findFont(r.setting.Font)
 	if err != nil {
 		logrus.WithError(err).Errorf("cannot find font %s", r.setting.Font)
 		return err
 	}
-	err = r.ctx.LoadFontFace(fontFile, r.setting.Point)
+	err = r.ctx.LoadFontFace(fontFile, math.Round(float64(r.setting.Point)*pixelDense))
 	if err != nil {
 		logrus.WithError(err).Errorf("cannot load font %s", fontFile)
 		return err
@@ -69,6 +71,8 @@ func (r render) renderText(text string) error {
 	var maxLineWidth float64 = 0
 	vPad := r.setting.VPadding
 	hPad := r.setting.HPadding
+
+	ratioDense := float64(r.ctx.Width()/r.ctx.Height()) / (1920.0 / 1080.0)
 
 	if vPad <= 0 {
 		vPad = 0.05
@@ -84,6 +88,9 @@ func (r render) renderText(text string) error {
 	if hPad < 1 {
 		hPad *= float64(r.ctx.Width())
 	}
+
+	hPad *= ratioDense
+	vPad /= ratioDense
 
 	topOffset := func() float64 {
 		return vPad
