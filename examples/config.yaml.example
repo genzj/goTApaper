@@ -36,6 +36,67 @@ daemon:
   # seconds to sleep between two adjoined background refresh
   interval: 3600
 
+# watermark can be added to the downloaded picture
+# multiple watermarks can be enabled simutaneously
+watermark:
+  -
+    # name of the font file to be used for watermark
+    # it can be an absolute file path or a name of the font file (NOT the name
+    # of font family) in which case font will be searched in system font paths:
+    #   Win:
+    #     %WINDIR%/Fonts,
+    #     %LOCALAPPDATA%/Microsoft/Windows/Fonts
+    #   Linux/Unix:
+    #     ~/.fonts, $XDG_DATA_HOME/.fonts, ~/.local/share/fonts,
+    #     /usr/local/share/fonts/, /usr/share/fonts/ and fonts directories under
+    #     each dir in $XDG_DATA_DIRS
+    #   MacOS (Darwin):
+    #     ~/Library/Fonts/, /Library/Fonts/, /System/Library/Fonts/
+    # ONLY TrueType font (*.ttf) supported!
+    font: NotoSans-Regular.ttf
+
+    # point size of the font
+    point: 12
+
+    # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
+    # (rrggbbaa) notation. remember to wrap the value in quotes when it only
+    # contains digitals (e.g. "11223344") or yaml parser will interpret it as
+    # an integer
+    color: 1111117f
+
+    # position of watermark lines, can be one of top-left, top-center,
+    # top-right middle-left, middle-center, middle-right, bottom-left,
+    # bottom-center, bottom-right
+    position: bottom-right
+
+    # Horizontal/vertical padding, offset to left-or-right/top-or-bottom edge
+    # of the picture
+    # The hPadding not applicable to *-center positions, likewise the vPadding
+    # not applicable to middle-* positions. they will be ignored without any
+    # error in that cases.
+    # If a float less than 1 is specified for padding, it will be interpreted
+    # as relative percentage of the width (for hPadding) or height (for
+    # vPadding) of the picture; otherwise it will be used directly as pixel
+    # number
+    hPadding: 0.01
+    vPadding: 0.1
+
+    # Space height between each two lines. Relative to font height.
+    linespace: 1.2
+
+    # Alignment of lines. It can be left, center or right
+    alignment: right
+    # Golang Template used to generate watermark, can contain multiple lines.
+    # refer to https://golang.org/pkg/text/template/ for golang template syntax
+    # fields can be used in the template:
+    #   Title string: title of the wallpaper.
+    #   Credit string: credit info or name of uploader
+    #   UploadTime time: when is the wallpaper uploaded
+    #   DownloadTime time: when is the wallpaper downloaded
+    template: |
+      {{.Title}} ({{.Credit}})
+      @{{.UploadTime.Format "2006 Jan 2 15:04:05"}}
+
 # The active-channels is a list containing keys of enabled channel definitions.
 # Items can either be plain string names which enable corresponding channels
 # in every refreshing executions or name-probability maps (map[string]float)

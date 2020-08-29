@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/sirupsen/logrus"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -15,14 +17,16 @@ var (
 	systemParametersInfo = user32.NewProc("SystemParametersInfoW")
 )
 
+// Win32Setter supports Windows 7~10
 type Win32Setter int
 
-// SetWallpaper can set windows wallpaper
-func (_ Win32Setter) Set(filename string) error {
+// Set windows wallpaper
+func (Win32Setter) Set(filename string) error {
 	filename, err := filepath.Abs(filename)
 	if err != nil {
 		return err
 	}
+	logrus.Debugf("setting wallpaper %s", filename)
 
 	imageLocPtr, err := syscall.UTF16PtrFromString(filename)
 	if err != nil {

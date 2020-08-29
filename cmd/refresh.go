@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"image/jpeg"
 	"math/rand"
 	"os"
 	"time"
 
 	"github.com/genzj/goTApaper/actor"
+	"github.com/genzj/goTApaper/actor/watermark"
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
 	"github.com/sirupsen/logrus"
@@ -140,16 +142,18 @@ func refresh(specifiedChannels []string) {
 		setting.Set("force", force)
 		l.Debugf("setting: %#v", setting.AllSettings())
 
-		raw, _, format, err := channel.Channels.Run(setting.GetString("type"), setting)
+		raw, img, format, err := channel.Channels.Run(setting.GetString("type"), setting)
 		if err != nil {
 			l.Error(err)
 			continue
 		}
 
-		if raw == nil {
+		if raw == nil || img == nil {
 			l.Infoln("no image downloaded")
 			continue
 		}
+
+		newImg, err := watermark.Render(img)
 
 		wallpaperFileName := wallpaperPath + "." + format
 
@@ -160,12 +164,23 @@ func refresh(specifiedChannels []string) {
 		}
 		defer out.Close()
 
-		_, err = raw.WriteTo(out)
+		if newImg != nil && err == nil {
+			img = newImg
+			err = jpeg.Encode(
+				out, img, &jpeg.Options{
+					Quality: 90,
+				},
+			)
+		} else {
+			// use raw bytes to avoid picture quality loss
+			_, err = raw.WriteTo(out)
+		}
 		if err != nil {
 			l.Error(err)
 			continue
 		}
 
+		logrus.Debug("setting wallpaper...")
 		err = setter.Set(wallpaperFileName)
 		if err != nil {
 			l.Error(err)
