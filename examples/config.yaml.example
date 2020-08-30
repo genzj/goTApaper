@@ -56,30 +56,45 @@ watermark:
     font: NotoSans-Regular.ttf
 
     # point size of the font
-    point: 15
+    point: 13
+
+    # If not zero, the font point will be calculated dynamically 
+    # to keep size of watermarks visually consistent on pictures in various
+    # resolution. Font point used for rendering is:
+    #   render_point = config_point * (picture_height / reference_height)
+    reference-height: 1080
+
+    # If both of referenceHeight and referenceWidth are non-zero, ratio of
+    # picture will be taken into consideration when calculating margin to keep
+    # watermarks in a relatively stable position in pictures with various
+    # width-height ratio Margin will be calculated by:
+    #   relative_ratio = (picture_width / picture_height) / (reference_width / reference_height)
+    #   render_hMargin = config_hMargin * relative_ratio
+    #   render_vMargin = config_hMargin / relative_ratio
+    reference-width: 1920
 
     # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
     # (rrggbbaa) notation. remember to wrap the value in quotes when it only
     # contains digitals (e.g. "11223344") or yaml parser will interpret it as
     # an integer
-    color: eeeeee80
+    color: 222222
 
     # position of watermark lines, can be one of top-left, top-center,
     # top-right middle-left, middle-center, middle-right, bottom-left,
     # bottom-center, bottom-right
     position: bottom-center
 
-    # Horizontal/vertical padding, offset to left-or-right/top-or-bottom edge
-    # of the picture
-    # The hPadding not applicable to *-center positions, likewise the vPadding
-    # not applicable to middle-* positions. they will be ignored without any
-    # error in that cases.
-    # If a float less than 1 is specified for padding, it will be interpreted
-    # as relative percentage of the width (for hPadding) or height (for
-    # vPadding) of the picture; otherwise it will be used directly as pixel
-    # number
-    hPadding: 0.01
-    vPadding: 0.1
+    # Horizontal/vertical margin, i.e. distance between margin and
+    # the left-or-right/top-or-bottom edge of the picture
+    # The hMargin is not applicable to *-center positions, likewise the vMargin
+    # is not applicable to middle-* positions. Margins will be ignored without
+    # any error if not applicable.
+    # If a float less than 1 is specified, it will be interpreted as relative
+    # percentage of the width (for h-margin) or height (for v-margin) of the
+    # picture; otherwise it will be used directly as pixel number
+    h-margin: 0.01
+    v-margin: 0.1
+
 
     # Space height between each two lines. Relative to font height.
     linespace: 1.2
@@ -96,6 +111,28 @@ watermark:
     template: |
       {{.Title}} ({{.Credit}} | {{.ChannelKey}})
       {{.UploadTime.Format "2006 Jan 2 15:04:05"}}
+    
+    background:
+      # Color of watermark background, in the same notation with font color.
+      # If unset or set to blank string, no background will be rendered
+      color: "eeeeee66"
+
+      # If set, background will be expanded to the left/right edges
+      # (h-throughout) and/or top/bottom edges (v-throughout)
+      h-throughout: yes
+      v-throughout: no
+
+      # Padding between border of the background to edge of text. Paddings can
+      # be specified in array of float with various number of element:
+      #   * with 4 or more elements: only first 4 will be used as top, right,
+      #     bottom and left padding respectively
+      #   * with 3 elements: value for top, right, bottom; left padding will be
+      #     set the same as right
+      #   * with 2 elements: use the first element for top and bottom, second for
+      #     the rest
+      #   * with 1 element: use the value for all four paddings
+      paddings:
+        - 0.2
 
 # The active-channels is a list containing keys of enabled channel definitions.
 # Items can either be plain string names which enable corresponding channels

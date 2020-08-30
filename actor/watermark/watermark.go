@@ -11,16 +11,26 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type watermarkBackgroundSetting struct {
+	Paddings    []float64 `mapstructure:"paddings"`
+	HThroughout bool      `mapstructure:"h-throughout"`
+	VThroughout bool      `mapstructure:"v-throughout"`
+	Color       string    `mapstructure:"color"`
+}
+
 type watermarkSetting struct {
-	Font      string  `mapstructure:"font"`
-	Point     float64 `mapstructure:"point"`
-	Color     string  `mapstructure:"color"`
-	Position  string  `mapstructure:"position"`
-	HPadding  float64 `mapstructure:"hPadding"`
-	VPadding  float64 `mapstructure:"vPadding"`
-	Linespace float64 `mapstructure:"linespace"`
-	Alignment string  `mapstructure:"alignment"`
-	Template  string  `mapstructure:"template"`
+	Font            string  `mapstructure:"font"`
+	Point           float64 `mapstructure:"point"`
+	Color           string  `mapstructure:"color"`
+	Position        string  `mapstructure:"position"`
+	HMargin         float64 `mapstructure:"h-margin"`
+	VMargin         float64 `mapstructure:"v-margin"`
+	Linespace       float64 `mapstructure:"linespace"`
+	Alignment       string  `mapstructure:"alignment"`
+	Template        string  `mapstructure:"template"`
+	ReferenceHeight float64 `mapstructure:"reference-height"`
+	ReferenceWidth  float64 `mapstructure:"reference-width"`
+	Background      watermarkBackgroundSetting
 }
 
 type watermarkGroups struct {
@@ -29,6 +39,12 @@ type watermarkGroups struct {
 
 // Render watermark to the given image
 func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
+	type task struct {
+		text    string
+		setting watermarkSetting
+	}
+	tasks := []task{}
+
 	groups := watermarkGroups{}
 	if err := viper.Unmarshal(&groups); err != nil {
 		logrus.WithError(err).Warn(
@@ -61,15 +77,36 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 		}
 		text := strings.TrimSpace(builder.String())
 		logrus.Debugf("render watermark text %#v", text)
-		r := newRender(im, setting)
+		tasks = append(tasks, task{text: text, setting: setting})
+	}
+
+	r := newRender(im, watermarkSetting{})
+
+	// layer-1, background
+	for idx, task := range tasks {
+		if task.setting.Background.Color == "" {
+			continue
+		}
+		r.updateSetting(task.setting)
 		if err := r.loadFont(); err != nil {
 			logrus.Warnf("%d-th watermark ignored due to font loading error", idx)
 			continue
 		}
-		r.loadColor()
-		r.renderText(text)
-		im = r.image()
+		r.loadBackgroundColor()
+		r.renderBackground(task.text)
 	}
 
+	// layer-2, text
+	for idx, task := range tasks {
+		r.updateSetting(task.setting)
+		if err := r.loadFont(); err != nil {
+			logrus.Warnf("%d-th watermark ignored due to font loading error", idx)
+			continue
+		}
+		r.loadFontColor()
+		r.renderText(task.text)
+	}
+
+	im = r.image()
 	return im, nil
 }
