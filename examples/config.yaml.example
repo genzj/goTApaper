@@ -66,11 +66,8 @@ watermark:
 
     # If both of referenceHeight and referenceWidth are non-zero, ratio of
     # picture will be taken into consideration when calculating margin to keep
-    # watermarks in a relatively stable position in pictures with various
-    # width-height ratio Margin will be calculated by:
-    #   relative_ratio = (picture_width / picture_height) / (reference_width / reference_height)
-    #   render_hMargin = config_hMargin * relative_ratio
-    #   render_vMargin = config_hMargin / relative_ratio
+    # watermarks in a relatively stable position. It's recommended to set
+    # reference-height/-width to the actual resolution of the monitor.
     reference-width: 1920
 
     # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
@@ -92,12 +89,12 @@ watermark:
     # If a float less than 1 is specified, it will be interpreted as relative
     # percentage of the width (for h-margin) or height (for v-margin) of the
     # picture; otherwise it will be used directly as pixel number
-    h-margin: 0.01
+    h-margin: 0.1
     v-margin: 0.1
 
 
     # Space height between each two lines. Relative to font height.
-    linespace: 1.2
+    linespace: 1.4
 
     # Alignment of lines. It can be left, center or right
     alignment: center

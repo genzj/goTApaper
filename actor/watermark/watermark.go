@@ -82,6 +82,17 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 
 	r := newRender(im, watermarkSetting{})
 
+	if viper.GetBool("debug-rendering") {
+		postW, postH := r.sizeAfterFill()
+		cutW, cutH := r.cutAfterFill()
+		r.ctx.SetHexColor("ff0000")
+		r.ctx.SetLineWidth(5)
+		r.ctx.DrawRectangle(
+			cutW, cutH, postW, postH,
+		)
+		r.ctx.Stroke()
+	}
+
 	// layer-1, background
 	for idx, task := range tasks {
 		if task.setting.Background.Color == "" {
@@ -92,7 +103,6 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 			logrus.Warnf("%d-th watermark ignored due to font loading error", idx)
 			continue
 		}
-		r.loadBackgroundColor()
 		r.renderBackground(task.text)
 	}
 
@@ -103,7 +113,6 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 			logrus.Warnf("%d-th watermark ignored due to font loading error", idx)
 			continue
 		}
-		r.loadFontColor()
 		r.renderText(task.text)
 	}
 

@@ -48,4 +48,6 @@ func init() {
 	viper.BindPFlag("language", RootCmd.PersistentFlags().Lookup("lang"))
 	RootCmd.PersistentFlags().Bool("debug", false, "enable debug log output")
 	viper.BindPFlag("debug", RootCmd.PersistentFlags().Lookup("debug"))
+	RootCmd.PersistentFlags().Bool("debug-rendering", false, "enable debug mode in watermark rendering")
+	viper.BindPFlag("debug-rendering", RootCmd.PersistentFlags().Lookup("debug-rendering"))
 }

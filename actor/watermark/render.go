@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 
 	"github.com/fogleman/gg"
 )
@@ -54,7 +55,7 @@ func (r render) loadBackgroundColor() {
 	r.ctx.SetHexColor(r.setting.Background.Color)
 }
 
-func (r render) loadFontColor() {
+func (r render) loadTextColor() {
 	// in case the color in configuration not work
 	r.ctx.SetHexColor(fallbackFontColor)
 	r.ctx.SetHexColor(r.setting.Color)
@@ -84,41 +85,45 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 	vMargin := r.setting.VMargin
 	hMargin := r.setting.HMargin
 
-	ratioDense := float64(1.0)
+	filledHeight := float64(r.ctx.Height())
+	filledWidth := float64(r.ctx.Width())
+	var vCut, hCut float64
 	if r.setting.ReferenceHeight > 0 && r.setting.ReferenceWidth > 0 {
-		ratioDense = float64(r.ctx.Width()/r.ctx.Height()) /
-			(r.setting.ReferenceWidth / r.setting.ReferenceHeight)
+		filledWidth, filledHeight = r.sizeAfterFill()
+		hCut, vCut = r.cutAfterFill()
+		logrus.WithField(
+			"h", filledHeight,
+		).WithField(
+			"w", filledWidth,
+		).Debugf("filled size")
 	}
 
-	if vMargin <= 0 {
+	if vMargin < 0 {
 		vMargin = 0.05
 	}
-	if hMargin <= 0 {
+	if hMargin < 0 {
 		hMargin = 0.05
 	}
 
 	if vMargin < 1 {
-		vMargin *= float64(r.ctx.Height())
+		vMargin *= filledHeight
 	}
 
 	if hMargin < 1 {
-		hMargin *= float64(r.ctx.Width())
+		hMargin *= filledWidth
 	}
-
-	hMargin *= ratioDense
-	vMargin /= ratioDense
 
 	topOffset := func() float64 {
-		return vMargin
+		return vCut + vMargin
 	}
 	bottomOffset := func() float64 {
-		return float64(r.ctx.Height()) - vMargin
+		return float64(r.ctx.Height()) - vCut - vMargin
 	}
 	leftOffset := func() float64 {
-		return hMargin
+		return hCut + hMargin
 	}
 	rightOffset := func() float64 {
-		return float64(r.ctx.Width()) - hMargin
+		return float64(r.ctx.Width()) - hCut - hMargin
 	}
 	halfWidth := func() float64 {
 		return float64(r.ctx.Width()) / 2
@@ -264,6 +269,16 @@ func (r render) renderText(text string) error {
 	}
 
 	x, y, ax, ay, width := r.position(text)
+	if viper.GetBool("debug-rendering") {
+		r.ctx.SetHexColor("ff0000")
+		r.ctx.SetLineWidth(5)
+		r.ctx.DrawCircle(x, y, 10)
+		r.ctx.SetLineWidth(3)
+		r.ctx.DrawLine(x-10, y, x+10, y)
+		r.ctx.DrawLine(x, y-10, x, y+10)
+		r.ctx.Stroke()
+	}
+	r.loadTextColor()
 	r.ctx.DrawStringWrapped(
 		text,
 		x, y,
@@ -280,6 +295,11 @@ func (r render) renderBackground(text string) {
 	x, y, ax, ay, width := r.position(text)
 	bx, by, bw, bh := r.boundOf(text, x, y, ax, ay, width)
 	r.ctx.DrawRectangle(bx, by, bw, bh)
+	if viper.GetBool("debug-rendering") {
+		r.ctx.SetHexColor("ff0000")
+		r.ctx.StrokePreserve()
+	}
+	r.loadBackgroundColor()
 	r.ctx.Fill()
 }
 
@@ -289,4 +309,26 @@ func (r render) image() image.Image {
 
 func (r *render) updateSetting(setting watermarkSetting) {
 	r.setting = setting
+}
+
+func (r render) sizeAfterFill() (w, h float64) {
+	w = float64(r.ctx.Width())
+	h = float64(r.ctx.Height())
+	fillRatio := r.setting.ReferenceWidth / r.setting.ReferenceHeight
+	switch ratio := w / h; {
+	case ratio > fillRatio:
+		// over width
+		return h * fillRatio, h
+	case ratio < fillRatio:
+		// over height
+		return w, w / fillRatio
+	}
+	// same ratio
+	return w, h
+}
+
+func (r render) cutAfterFill() (horizontal, vertical float64) {
+	w, h := r.sizeAfterFill()
+
+	return (float64(r.ctx.Width()) - w) / 2, (float64(r.ctx.Height()) - h) / 2
 }
