@@ -126,7 +126,7 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 		UploadTime:   time.Now(),
 	}
 	if meta.UploadTime, err = time.ParseInLocation(
-		"January 02, 2006", toc.Items[0].PublishDate, time.UTC,
+		"January 2, 2006", toc.Items[0].PublishDate, time.UTC,
 	); err != nil {
 		logrus.WithError(err).Warnf(
 			"cannot parse publish date of %+v", toc.Items[0],
