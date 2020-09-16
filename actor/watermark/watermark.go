@@ -82,17 +82,6 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 
 	r := newRender(im, watermarkSetting{})
 
-	if viper.GetBool("debug-rendering") {
-		postW, postH := r.sizeAfterFill()
-		cutW, cutH := r.cutAfterFill()
-		r.ctx.SetHexColor("ff0000")
-		r.ctx.SetLineWidth(5)
-		r.ctx.DrawRectangle(
-			cutW, cutH, postW, postH,
-		)
-		r.ctx.Stroke()
-	}
-
 	// layer-1, background
 	for idx, task := range tasks {
 		if task.setting.Background.Color == "" {
@@ -114,6 +103,31 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 			continue
 		}
 		r.renderText(task.text)
+	}
+
+	// layer-3 debug overlay
+	if viper.GetBool("debug-rendering") {
+		for _, task := range tasks {
+			r.updateSetting(task.setting)
+			postW, postH := r.sizeAfterFill()
+			logrus.WithField(
+				"h", postH,
+			).WithField(
+				"w", postW,
+			).Debug("size after fill")
+			cutW, cutH := r.cutAfterFill()
+			logrus.WithField(
+				"h", cutH,
+			).WithField(
+				"w", cutW,
+			).Debug("pos after cut")
+			r.ctx.SetHexColor("ff0000")
+			r.ctx.SetLineWidth(5)
+			r.ctx.DrawRectangle(
+				cutW, cutH, postW, postH,
+			)
+			r.ctx.Stroke()
+		}
 	}
 
 	im = r.image()

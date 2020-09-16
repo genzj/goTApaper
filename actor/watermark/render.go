@@ -2,7 +2,6 @@ package watermark
 
 import (
 	"image"
-	"log"
 	"math"
 	"strings"
 
@@ -64,14 +63,20 @@ func (r render) loadTextColor() {
 func (r render) loadFont() error {
 	pixelDense := float64(1.0)
 	if r.setting.ReferenceHeight > 0 {
-		pixelDense = float64(r.ctx.Height() / 1080.0)
+		pixelDense = float64(r.ctx.Height()) / 1080.0
 	}
 	fontFile, err := findFont(r.setting.Font)
 	if err != nil {
 		logrus.WithError(err).Errorf("cannot find font %s", r.setting.Font)
 		return err
 	}
-	err = r.ctx.LoadFontFace(fontFile, math.Round(float64(r.setting.Point)*pixelDense))
+	fontPoints := math.Round(float64(r.setting.Point) * pixelDense)
+	logrus.WithFields(map[string]interface{}{
+		"setFontPoints": r.setting.Point,
+		"pixelDense":    pixelDense,
+		"relFontPoints": fontPoints,
+	}).Debug("load font face")
+	err = r.ctx.LoadFontFace(fontFile, fontPoints)
 	if err != nil {
 		logrus.WithError(err).Errorf("cannot load font %s", fontFile)
 		return err
@@ -95,7 +100,7 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 			"h", filledHeight,
 		).WithField(
 			"w", filledWidth,
-		).Debugf("filled size")
+		).Debug("filled size")
 	}
 
 	if vMargin < 0 {
@@ -195,12 +200,22 @@ func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh f
 	dc := r.ctx
 	lines := dc.WordWrap(s, width)
 
+	logrus.WithFields(map[string]interface{}{
+		"fontheight":  dc.FontHeight(),
+		"width":       width,
+		"lineSpacing": lineSpacing,
+		"lines":       lines,
+	}).Debug("calculating bound")
+
 	// sync h formula with MeasureMultilineString
 	height := float64(len(lines)) * dc.FontHeight() * lineSpacing
+	logrus.Debugf("height 1 %v", height)
 	height -= (lineSpacing - 1) * dc.FontHeight()
+	logrus.Debugf("height 2 %v", height)
 
 	x -= ax * width
 	y -= ay * height
+	logrus.WithField("ax", ax).WithField("ay", ay).WithField("width", width).WithField("height", height).Debug("calculating bound")
 
 	paddingSettings := r.setting.Background.Paddings
 	paddings := make([]float64, 0, 4)
@@ -218,6 +233,7 @@ func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh f
 	default:
 		paddings = append(paddings, paddingSettings[:4]...)
 	}
+	logrus.WithField("paddings", paddings).Debug("calculating bound")
 	for idx, padding := range paddings {
 		if math.Abs(padding) < 1 {
 			if idx == 0 || idx == 2 {
@@ -229,6 +245,7 @@ func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh f
 	}
 	x1 := x + width
 	y1 := y + height
+	logrus.WithField("x", x).WithField("y", y).WithField("x1", x1).WithField("y1", y1).Debug("calculating bound")
 
 	if r.setting.Background.HThroughout {
 		x = 0
@@ -249,7 +266,7 @@ func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh f
 	by = y
 	bw = x1 - x
 	bh = y1 - y
-	log.Printf("%##v", map[string]float64{
+	logrus.Debugf("bound: %v", map[string]float64{
 		"bx": bx, "by": y,
 		"bw": bw, "bh": bh,
 	})
@@ -270,7 +287,7 @@ func (r render) renderText(text string) error {
 
 	x, y, ax, ay, width := r.position(text)
 	if viper.GetBool("debug-rendering") {
-		r.ctx.SetHexColor("ff0000")
+		r.ctx.SetHexColor("ff00ff")
 		r.ctx.SetLineWidth(5)
 		r.ctx.DrawCircle(x, y, 10)
 		r.ctx.SetLineWidth(3)
@@ -279,6 +296,7 @@ func (r render) renderText(text string) error {
 		r.ctx.Stroke()
 	}
 	r.loadTextColor()
+	logrus.WithField("linespace", r.setting.Linespace).Debug("draw string wrapped")
 	r.ctx.DrawStringWrapped(
 		text,
 		x, y,
@@ -296,7 +314,7 @@ func (r render) renderBackground(text string) {
 	bx, by, bw, bh := r.boundOf(text, x, y, ax, ay, width)
 	r.ctx.DrawRectangle(bx, by, bw, bh)
 	if viper.GetBool("debug-rendering") {
-		r.ctx.SetHexColor("ff0000")
+		r.ctx.SetHexColor("ff00ff")
 		r.ctx.StrokePreserve()
 	}
 	r.loadBackgroundColor()
@@ -315,6 +333,7 @@ func (r render) sizeAfterFill() (w, h float64) {
 	w = float64(r.ctx.Width())
 	h = float64(r.ctx.Height())
 	fillRatio := r.setting.ReferenceWidth / r.setting.ReferenceHeight
+	logrus.WithField("ratio", w/h).WithField("w", r.setting.ReferenceWidth).WithField("h", r.setting.ReferenceHeight).Debug("ref size")
 	switch ratio := w / h; {
 	case ratio > fillRatio:
 		// over width
