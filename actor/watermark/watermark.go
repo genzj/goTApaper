@@ -115,18 +115,29 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 			).WithField(
 				"w", postW,
 			).Debug("size after fill")
-			cutW, cutH := r.cutAfterFill()
+			tCut, _, _, lCut := r.cutAfterFill()
 			logrus.WithField(
-				"h", cutH,
+				"h", tCut,
 			).WithField(
-				"w", cutW,
+				"w", lCut,
 			).Debug("pos after cut")
 			r.ctx.SetHexColor("ff0000")
 			r.ctx.SetLineWidth(5)
 			r.ctx.DrawRectangle(
-				cutW, cutH, postW, postH,
+				lCut, tCut, postW, postH,
 			)
 			r.ctx.Stroke()
+			r.ctx.DrawLine(
+				0, float64(r.ctx.Height())/2,
+				float64(r.ctx.Width()), float64(r.ctx.Height())/2,
+			)
+			r.ctx.DrawLine(
+				float64(r.ctx.Width())/2, 0,
+				float64(r.ctx.Width())/2, float64(r.ctx.Height()),
+			)
+			r.ctx.SetDash(10)
+			r.ctx.Stroke()
+			r.ctx.SetDash()
 		}
 	}
 

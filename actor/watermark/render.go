@@ -92,10 +92,10 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 
 	filledHeight := float64(r.ctx.Height())
 	filledWidth := float64(r.ctx.Width())
-	var vCut, hCut float64
+	var tCut, rCut, lCut, bCut float64
 	if r.setting.ReferenceHeight > 0 && r.setting.ReferenceWidth > 0 {
 		filledWidth, filledHeight = r.sizeAfterFill()
-		hCut, vCut = r.cutAfterFill()
+		tCut, rCut, bCut, lCut = r.cutAfterFill()
 		logrus.WithField(
 			"h", filledHeight,
 		).WithField(
@@ -119,16 +119,16 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 	}
 
 	topOffset := func() float64 {
-		return vCut + vMargin
+		return tCut + vMargin
 	}
 	bottomOffset := func() float64 {
-		return float64(r.ctx.Height()) - vCut - vMargin
+		return float64(r.ctx.Height()) - bCut - vMargin
 	}
 	leftOffset := func() float64 {
-		return hCut + hMargin
+		return lCut + hMargin
 	}
 	rightOffset := func() float64 {
-		return float64(r.ctx.Width()) - hCut - hMargin
+		return float64(r.ctx.Width()) - rCut - hMargin
 	}
 	halfWidth := func() float64 {
 		return float64(r.ctx.Width()) / 2
@@ -346,8 +346,9 @@ func (r render) sizeAfterFill() (w, h float64) {
 	return w, h
 }
 
-func (r render) cutAfterFill() (horizontal, vertical float64) {
+func (r render) cutAfterFill() (top, right, bottom, left float64) {
 	w, h := r.sizeAfterFill()
-
-	return (float64(r.ctx.Width()) - w) / 2, (float64(r.ctx.Height()) - h) / 2
+	cutw, cuth := (float64(r.ctx.Width()) - w), (float64(r.ctx.Height()) - h)
+	left, top = cutw/2, cuth/2
+	return top, cutw - left, cuth - top, left
 }
