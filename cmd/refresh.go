@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/genzj/goTApaper/actor"
+	"github.com/genzj/goTApaper/actor/setter"
 	"github.com/genzj/goTApaper/actor/watermark"
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
@@ -117,11 +117,11 @@ func refresh(specifiedChannels []string) {
 	}
 
 	setterName := viper.GetString("setter")
-	v, ok := actor.Setters.Get(setterName)
+	v, ok := setter.Setters.Get(setterName)
 	if !ok {
 		logrus.Panicf("setter \"%s\" not registered", setterName)
 	}
-	setter := v.(actor.Setter)
+	setter := v.(setter.Setter)
 
 	for name, probability := range activeChannels {
 		l := logrus.WithField("channel", name)

@@ -1,6 +1,6 @@
 // +build darwin
 
-package actor
+package setter
 
 import (
 	"fmt"

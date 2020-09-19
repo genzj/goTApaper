@@ -1,6 +1,6 @@
 // +build linux
 
-package actor
+package setter
 
 import (
 	"os/exec"
