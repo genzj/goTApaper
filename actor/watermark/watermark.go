@@ -19,18 +19,18 @@ type watermarkBackgroundSetting struct {
 }
 
 type watermarkSetting struct {
-	Font            string  `mapstructure:"font"`
-	Point           float64 `mapstructure:"point"`
-	Color           string  `mapstructure:"color"`
-	Position        string  `mapstructure:"position"`
-	HMargin         float64 `mapstructure:"h-margin"`
-	VMargin         float64 `mapstructure:"v-margin"`
-	Linespace       float64 `mapstructure:"linespace"`
-	Alignment       string  `mapstructure:"alignment"`
-	Template        string  `mapstructure:"template"`
-	ReferenceHeight float64 `mapstructure:"reference-height"`
-	ReferenceWidth  float64 `mapstructure:"reference-width"`
-	Background      watermarkBackgroundSetting
+	Font             string  `mapstructure:"font"`
+	Point            float64 `mapstructure:"point"`
+	Color            string  `mapstructure:"color"`
+	Position         string  `mapstructure:"position"`
+	HMargin          float64 `mapstructure:"h-margin"`
+	VMargin          float64 `mapstructure:"v-margin"`
+	Linespace        float64 `mapstructure:"linespace"`
+	Alignment        string  `mapstructure:"alignment"`
+	Template         string  `mapstructure:"template"`
+	AbsolutePoint    bool    `mapstructure:"absolute-point"`
+	AbsolutePosition bool    `mapstructure:"absolute-position"`
+	Background       watermarkBackgroundSetting
 }
 
 type watermarkGroups struct {
@@ -141,6 +141,7 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 		}
 	}
 
-	im = r.image()
+	im = r.cropIfNeeded()
+
 	return im, nil
 }

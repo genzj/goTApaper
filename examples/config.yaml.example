@@ -36,6 +36,18 @@ daemon:
   # seconds to sleep between two adjoined background refresh
   interval: 3600
 
+# crop picture to fit display ratio. Normally OS fill desktop with picture in a
+# proper way except for Windows, in which picture may not be aligned to the
+# center of screen and cause watermark to be covered by taskbar. So it's
+# recommended to use "win-only" to crop pictures before setting it as wallpaper
+# on windows exclusively.
+# Use "force" to always crop or "no" to leave picture as is.
+crop: win-only
+
+# used in the relative position of watermark and cropping.
+reference-width: 1920
+reference-height: 1080
+
 # watermark can be added to the downloaded picture
 # multiple watermarks can be enabled simutaneously
 watermark:
@@ -58,17 +70,16 @@ watermark:
     # point size of the font
     point: 13
 
-    # If not zero, the font point will be calculated dynamically 
+    # If set to false/no, the font point will be calculated dynamically 
     # to keep size of watermarks visually consistent on pictures in various
     # resolution. Font point used for rendering is:
     #   render_point = config_point * (picture_height / reference_height)
-    reference-height: 1080
+    absolute-point: no
 
-    # If both of referenceHeight and referenceWidth are non-zero, ratio of
-    # picture will be taken into consideration when calculating margin to keep
-    # watermarks in a relatively stable position. It's recommended to set
-    # reference-height/-width to the actual resolution of the monitor.
-    reference-width: 1920
+
+    # If set to false/no, ratio of picture will be taken into consideration
+    # when position watermarks to keep them in a relatively stable position.
+    absolute-position: no
 
     # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
     # (rrggbbaa) notation. remember to wrap the value in quotes when it only

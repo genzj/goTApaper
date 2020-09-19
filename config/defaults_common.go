@@ -25,4 +25,7 @@ func InitDefaultConfig() {
 	viper.SetDefault("setter", DefaultSetter)
 	viper.SetDefault("ng-photo-of-today.strategy", "largest")
 	viper.SetDefault("bing-wallpaper.strategy", "largest-no-logo")
+	viper.SetDefault("reference-width", 1920)
+	viper.SetDefault("reference-height", 1080)
+	viper.SetDefault("crop", "win-only")
 }

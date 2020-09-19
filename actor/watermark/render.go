@@ -3,6 +3,7 @@ package watermark
 import (
 	"image"
 	"math"
+	"runtime"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -60,20 +61,30 @@ func (r render) loadTextColor() {
 	r.ctx.SetHexColor(r.setting.Color)
 }
 
-func (r render) loadFont() error {
+func (r render) normalizedPoint() float64 {
 	pixelDense := float64(1.0)
-	if r.setting.ReferenceHeight > 0 {
-		pixelDense = float64(r.ctx.Height()) / 1080.0
+	if !r.setting.AbsolutePoint {
+		refHeight := viper.GetFloat64("reference-height")
+		if math.IsNaN(refHeight) || math.IsInf(refHeight, 0) || refHeight == 0 {
+			logrus.WithField("reference-height", refHeight).Warn("invalid reference height")
+		} else {
+			pixelDense = float64(r.ctx.Height()) / refHeight
+		}
 	}
+	logrus.Debugf("font point dense: %f", pixelDense)
+
+	return math.Round(float64(r.setting.Point) * pixelDense)
+}
+
+func (r render) loadFont() error {
 	fontFile, err := findFont(r.setting.Font)
 	if err != nil {
 		logrus.WithError(err).Errorf("cannot find font %s", r.setting.Font)
 		return err
 	}
-	fontPoints := math.Round(float64(r.setting.Point) * pixelDense)
+	fontPoints := r.normalizedPoint()
 	logrus.WithFields(map[string]interface{}{
 		"setFontPoints": r.setting.Point,
-		"pixelDense":    pixelDense,
 		"relFontPoints": fontPoints,
 	}).Debug("load font face")
 	err = r.ctx.LoadFontFace(fontFile, fontPoints)
@@ -93,7 +104,7 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 	filledHeight := float64(r.ctx.Height())
 	filledWidth := float64(r.ctx.Width())
 	var tCut, rCut, lCut, bCut float64
-	if r.setting.ReferenceHeight > 0 && r.setting.ReferenceWidth > 0 {
+	if !r.setting.AbsolutePosition {
 		filledWidth, filledHeight = r.sizeAfterFill()
 		tCut, rCut, bCut, lCut = r.cutAfterFill()
 		logrus.WithField(
@@ -221,16 +232,21 @@ func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh f
 	paddings := make([]float64, 0, 4)
 	switch l := len(paddingSettings); l {
 	case 0:
+		// no padding at all
 		paddings = []float64{0, 0, 0, 0}
 	case 1:
+		// use same padding for 4 edges
 		paddings = append(paddings, paddingSettings[0], paddingSettings[0], paddingSettings[0], paddingSettings[0])
 	case 2:
+		// vertical and horizontal padding amounts
 		paddings = append(paddings, paddingSettings[:2]...)
 		paddings = append(paddings, paddingSettings[:2]...)
 	case 3:
+		// top, horizontal and bottom padding amounts
 		paddings = append(paddings, paddingSettings[:3]...)
 		paddings = append(paddings, paddingSettings[1])
 	default:
+		// padding amount for all 4 edges specified
 		paddings = append(paddings, paddingSettings[:4]...)
 	}
 	logrus.WithField("paddings", paddings).Debug("calculating bound")
@@ -330,18 +346,34 @@ func (r *render) updateSetting(setting watermarkSetting) {
 }
 
 func (r render) sizeAfterFill() (w, h float64) {
+	refWidth := viper.GetFloat64("reference-width")
+	refHeight := viper.GetFloat64("reference-height")
+	fillRatio := refWidth / refHeight
+
 	w = float64(r.ctx.Width())
 	h = float64(r.ctx.Height())
-	fillRatio := r.setting.ReferenceWidth / r.setting.ReferenceHeight
-	logrus.WithField("ratio", w/h).WithField("w", r.setting.ReferenceWidth).WithField("h", r.setting.ReferenceHeight).Debug("ref size")
-	switch ratio := w / h; {
-	case ratio > fillRatio:
-		// over width
-		return h * fillRatio, h
-	case ratio < fillRatio:
-		// over height
-		return w, w / fillRatio
+
+	logger := logrus.WithFields(map[string]interface{}{
+		"fillRatio": fillRatio,
+		"refWidth":  refWidth,
+		"refHeight": refHeight,
+		"ratio":     w / h,
+		"w":         w,
+		"h":         h,
+	})
+	if math.IsInf(fillRatio, 0) || math.IsNaN(fillRatio) || fillRatio == 0 {
+		logger.Warn("invalid refence width or height, use original picture")
+	} else {
+		switch ratio := w / h; {
+		case ratio > fillRatio:
+			// over width
+			return h * fillRatio, h
+		case ratio < fillRatio:
+			// over height
+			return w, w / fillRatio
+		}
 	}
+
 	// same ratio
 	return w, h
 }
@@ -351,4 +383,43 @@ func (r render) cutAfterFill() (top, right, bottom, left float64) {
 	cutw, cuth := (float64(r.ctx.Width()) - w), (float64(r.ctx.Height()) - h)
 	left, top = cutw/2, cuth/2
 	return top, cutw - left, cuth - top, left
+}
+
+func (r render) cropIfNeeded() image.Image {
+	im := r.image()
+
+	switch option := viper.GetString("crop"); option {
+	case "no":
+		return im
+	case "win-only":
+		if runtime.GOOS != "windows" {
+			return im
+		}
+	case "force":
+	// handle below
+	default:
+		logrus.WithField("crop", option).Warn("unknown crop option")
+		return im
+	}
+
+	if rgba, ok := im.(*image.RGBA); ok {
+		postW, postH := r.sizeAfterFill()
+		logrus.WithField(
+			"h", postH,
+		).WithField(
+			"w", postW,
+		).Debug("size after fill")
+		tCut, _, _, lCut := r.cutAfterFill()
+		logrus.WithField(
+			"h", tCut,
+		).WithField(
+			"w", lCut,
+		).Debug("pos after cut")
+		cropped := rgba.SubImage(
+			image.Rect(int(lCut), int(tCut), int(lCut+postW), int(tCut+postH)),
+		)
+		return cropped
+	}
+	logrus.WithField("image", im).Warn("invalid image format")
+	return im
 }
