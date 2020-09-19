@@ -3,8 +3,9 @@ package watermark
 import (
 	"image"
 	"math"
-	"runtime"
 	"strings"
+
+	"github.com/genzj/goTApaper/util"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -346,36 +347,7 @@ func (r *render) updateSetting(setting watermarkSetting) {
 }
 
 func (r render) sizeAfterFill() (w, h float64) {
-	refWidth := viper.GetFloat64("reference-width")
-	refHeight := viper.GetFloat64("reference-height")
-	fillRatio := refWidth / refHeight
-
-	w = float64(r.ctx.Width())
-	h = float64(r.ctx.Height())
-
-	logger := logrus.WithFields(map[string]interface{}{
-		"fillRatio": fillRatio,
-		"refWidth":  refWidth,
-		"refHeight": refHeight,
-		"ratio":     w / h,
-		"w":         w,
-		"h":         h,
-	})
-	if math.IsInf(fillRatio, 0) || math.IsNaN(fillRatio) || fillRatio == 0 {
-		logger.Warn("invalid refence width or height, use original picture")
-	} else {
-		switch ratio := w / h; {
-		case ratio > fillRatio:
-			// over width
-			return h * fillRatio, h
-		case ratio < fillRatio:
-			// over height
-			return w, w / fillRatio
-		}
-	}
-
-	// same ratio
-	return w, h
+	return util.Viewpoint(float64(r.ctx.Width()), float64(r.ctx.Height()))
 }
 
 func (r render) cutAfterFill() (top, right, bottom, left float64) {
@@ -383,43 +355,4 @@ func (r render) cutAfterFill() (top, right, bottom, left float64) {
 	cutw, cuth := (float64(r.ctx.Width()) - w), (float64(r.ctx.Height()) - h)
 	left, top = cutw/2, cuth/2
 	return top, cutw - left, cuth - top, left
-}
-
-func (r render) cropIfNeeded() image.Image {
-	im := r.image()
-
-	switch option := viper.GetString("crop"); option {
-	case "no":
-		return im
-	case "win-only":
-		if runtime.GOOS != "windows" {
-			return im
-		}
-	case "force":
-	// handle below
-	default:
-		logrus.WithField("crop", option).Warn("unknown crop option")
-		return im
-	}
-
-	if rgba, ok := im.(*image.RGBA); ok {
-		postW, postH := r.sizeAfterFill()
-		logrus.WithField(
-			"h", postH,
-		).WithField(
-			"w", postW,
-		).Debug("size after fill")
-		tCut, _, _, lCut := r.cutAfterFill()
-		logrus.WithField(
-			"h", tCut,
-		).WithField(
-			"w", lCut,
-		).Debug("pos after cut")
-		cropped := rgba.SubImage(
-			image.Rect(int(lCut), int(tCut), int(lCut+postW), int(tCut+postH)),
-		)
-		return cropped
-	}
-	logrus.WithField("image", im).Warn("invalid image format")
-	return im
 }

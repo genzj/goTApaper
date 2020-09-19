@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/genzj/goTApaper/actor"
 	"github.com/genzj/goTApaper/actor/setter"
 	"github.com/genzj/goTApaper/actor/watermark"
 	"github.com/genzj/goTApaper/channel"
@@ -158,6 +159,8 @@ func refresh(specifiedChannels []string) {
 		}
 
 		newImg, err := watermark.Render(img, meta)
+
+		newImg = actor.DefaultCropper.Crop(newImg)
 
 		wallpaperFileName := wallpaperPath + "." + meta.Format
 

@@ -141,7 +141,5 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 		}
 	}
 
-	im = r.cropIfNeeded()
-
-	return im, nil
+	return r.ctx.Image(), nil
 }
