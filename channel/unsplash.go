@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"io/ioutil"
 	"net/url"
 	"strings"
 	"time"
@@ -131,7 +130,7 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 	// do my best to obey Unsplash API guidelines:
 	// https://help.unsplash.com/api-guidelines/more-on-each-guideline/guideline-triggering-a-download
 	go func() {
-		resp, err := util.GetInType(response.Links.Download, "")
+		resp, err := util.Get(response.Links.Download)
 		if err != nil {
 			logrus.Warnf("report download failed: %s", err)
 		}
@@ -152,26 +151,9 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 	if err != nil {
 		return nil, nil, meta, err
 	}
-
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	bs, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, meta, err
-	}
-
-	raw := bytes.NewReader(bs)
-	reader2 := bytes.NewReader(bs)
-	img, format, err := image.Decode(reader2)
-	if err != nil {
-		return raw, nil, meta, err
-	}
+	raw, img, format, err := util.DecodeFromResponse(resp)
 	meta.Format = format
-	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
-
-	return raw, img, meta, nil
+	return raw, img, meta, err
 }
 
 func init() {

@@ -1,7 +1,11 @@
 package util
 
 import (
+	"bytes"
+	"image"
+	"io/ioutil"
 	"math"
+	"net/http"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -44,4 +48,26 @@ func Viewpoint(w0, h0 float64) (w, h float64) {
 	logger.WithField("w1", w1).WithField("h1", h1).Debug("viewpoint located")
 
 	return w1, h1
+}
+
+// DecodeFromResponse return picture in http response
+func DecodeFromResponse(resp *http.Response) (raw *bytes.Reader, img image.Image, format string, err error) {
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	bs, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	raw = bytes.NewReader(bs)
+	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
+
+	reader2 := bytes.NewReader(bs)
+	img, format, err = image.Decode(reader2)
+	if err != nil {
+		return raw, nil, "", err
+	}
+	return raw, img, format, nil
 }

@@ -9,4 +9,6 @@ const (
 	Largest = "largest"
 	// ByWidth downloads a picture with specified width, must be used with the width parameter
 	ByWidth = "by-width"
+	// BySize downloads a picture with specified width and height, must be used with the width and height parameters
+	BySize = "by-size"
 )

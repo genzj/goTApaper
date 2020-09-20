@@ -3,7 +3,6 @@ package channel
 import (
 	"bytes"
 	"image"
-	"io/ioutil"
 	"time"
 
 	"github.com/genzj/goTApaper/util"
@@ -39,30 +38,14 @@ func (fixedPictureProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 		return nil, nil, meta, nil
 	}
 
-	resp, err := util.GetInType(finalURL, "image/png")
+	resp, err := util.GetInType(finalURL, "image/")
 	if err != nil {
 		return nil, nil, meta, err
 	}
 
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	bs, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, meta, err
-	}
-
-	raw := bytes.NewReader(bs)
-	reader2 := bytes.NewReader(bs)
-	img, format, err := image.Decode(reader2)
-	if err != nil {
-		return raw, nil, meta, err
-	}
+	raw, img, format, err := util.DecodeFromResponse(resp)
 	meta.Format = format
-	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
-
-	return raw, img, meta, nil
+	return raw, img, meta, err
 }
 
 func init() {

@@ -11,6 +11,7 @@
 #     *  largest: always use the highest resolution
 #     *  by-width: specify the width of image explicitly, must be used with a "width" option. the height of picture is
 #        calculated automatically to retain the ratio of image
+#     *  by-size: specify the width and height of image explicitly, must be used with a "width" & "height" option.
 
 ---
 # path and basename of downloaded wallpaper file. Do NOT include extension name
@@ -45,8 +46,8 @@ daemon:
 crop: win-only
 
 # used in the relative position of watermark and cropping.
-reference-width: 1920
-reference-height: 1080
+reference-width: &width 1920
+reference-height: &height 1080
 
 # watermark can be added to the downloaded picture
 # multiple watermarks can be enabled simutaneously
@@ -157,12 +158,26 @@ watermark:
 # as 1 to guarantee at least one detection in each refreshing, hence its user
 # setting will be ignored.
 active-channels:
+  # - pexels-curated
   - ng
   - bing
   # 50% chance to run unsplash with the search keyword "color"
   # - unsplash-kw-color: 0.5
   # as last item it will always be run no matter what probability set here
   # - unsplash-kw-water
+
+pexels-common-settings: &pexels-common-settings
+  # set you API key here. you can get an API key from
+  #   https://www.pexels.com/api/new/
+  key: pexels-api-key-id
+  # supported strategy:
+  # - by-size
+  # - other strategies all download raw links without any scaling
+  strategy: by-size
+  width: *width
+  height: *height
+  dpr: 1
+
 
 # unsplash channels share a lot of common settings so gather them into a
 # reusable section with anchor to take advantage of YAML map merging,
@@ -223,6 +238,10 @@ channels:
     #            does not have a logo-ed hires wallpaper version)
     # - by-width
     strategy: largest-no-logo
+  
+  pexels-curated:
+    <<: *pexels-common-settings
+    type: pexels-curated
 
   unsplash-kw-color:
     <<: *unsplash-common-settings

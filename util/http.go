@@ -86,21 +86,26 @@ func IsReachableLink(url string) bool {
 	return (response.StatusCode / 100) == 2
 }
 
-// GetInType sends a GET request and expects a response with certain content type
-func GetInType(url, expected string) (*http.Response, error) {
-	httpClient, err := getHTTPClient()
+// DoAndExpectType sends request to server and expects response with specified
+// content type
+func DoAndExpectType(req *http.Request, expected string) (*http.Response, error) {
+	client, err := getHTTPClient()
 	if err != nil {
 		logrus.Error("cannot initiate http client")
 		logrus.Fatal(err)
 		return nil, err
 	}
 
-	logrus.Debugf("get %s", url)
-	resp, err := httpClient.Get(url)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	logrus.Debugf("%d bytes received from %s", resp.ContentLength, url)
+	logrus.WithFields(logrus.Fields{
+		"url":         req.URL,
+		"len":         resp.ContentLength,
+		"status-code": resp.StatusCode,
+		"status":      resp.Status,
+	}).Debug("server responded")
 
 	if !strings.HasPrefix(
 		strings.ToLower(resp.Header.Get("Content-Type")),
@@ -115,9 +120,28 @@ func GetInType(url, expected string) (*http.Response, error) {
 	return resp, nil
 }
 
-// ReadJSON sends request and parse its JSON response
-func ReadJSON(url string, obj interface{}) error {
-	resp, err := GetInType(url, "application/json")
+// GetInType sends a GET request and expects a response with certain content type
+func GetInType(url, expected string) (*http.Response, error) {
+	logrus.Debugf("get %s", url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := DoAndExpectType(req, expected)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// Get a response from specified URL
+func Get(url string) (*http.Response, error) {
+	return GetInType(url, "")
+}
+
+// DoAndReadJSON sends request and parse its JSON response
+func DoAndReadJSON(req *http.Request, obj interface{}) error {
+	resp, err := DoAndExpectType(req, "application/json")
 	if err != nil {
 		return err
 	}
@@ -136,4 +160,14 @@ func ReadJSON(url string, obj interface{}) error {
 	}
 
 	return nil
+}
+
+// ReadJSON send a GET request to URL and parse its JSON response
+func ReadJSON(url string, obj interface{}) error {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	return DoAndReadJSON(req, obj)
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"image"
 	_ "image/jpeg" // for jpeg image codec
-	"io/ioutil"
 	"net/url"
 	"strconv"
 	"time"
@@ -191,21 +190,11 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 		return nil, nil, meta, err
 	}
 
-	defer resp.Body.Close()
-
-	bs, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, meta, err
-	}
-
-	raw := bytes.NewReader(bs)
-	reader2 := bytes.NewReader(bs)
-	img, format, err := image.Decode(reader2)
+	raw, img, format, err := util.DecodeFromResponse(resp)
+	meta.Format = format
 	if err != nil {
 		return raw, nil, meta, err
 	}
-	meta.Format = format
-	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
 	h.Mark(finalURL)
 	historyManager.Save(h)

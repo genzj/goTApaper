@@ -149,9 +149,11 @@ func refresh(specifiedChannels []string) {
 			continue
 		}
 
-		meta.Channel = setting.GetString("type")
-		meta.ChannelKey = name
-		l.Debugf("picture metadata %##v", meta)
+		if meta != nil {
+			meta.Channel = setting.GetString("type")
+			meta.ChannelKey = name
+			l.Debugf("picture metadata %##v", meta)
+		}
 
 		if raw == nil || img == nil {
 			l.Infoln("no image downloaded")

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"image"
-	"io/ioutil"
 	"strings"
 	"time"
 
@@ -150,24 +149,11 @@ func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 	if err != nil {
 		return nil, nil, meta, err
 	}
-
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	bs, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, meta, err
-	}
-
-	raw := bytes.NewReader(bs)
-	reader2 := bytes.NewReader(bs)
-	img, format, err := image.Decode(reader2)
+	raw, img, format, err := util.DecodeFromResponse(resp)
+	meta.Format = format
 	if err != nil {
 		return raw, nil, meta, err
 	}
-	meta.Format = format
-	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
 
 	h.Mark(finalURL)
 	_ = historyManager.Save(h)
