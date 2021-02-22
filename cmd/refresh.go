@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"image/jpeg"
 	"math/rand"
 	"os"
@@ -14,6 +15,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+var (
+	errNoAvailableChannel error = fmt.Errorf("no available channel")
 )
 
 var refreshCmd = &cobra.Command{
@@ -96,7 +101,7 @@ func collectSpecifiedChannels(specifiedChannels []string) map[string]float32 {
 	return ans
 }
 
-func refresh(specifiedChannels []string) {
+func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 	// reread config, in case refresh is called by daemon after a long sleep
 	// during which user updated the config file
 	if viper.ConfigFileUsed() == "" {
@@ -197,6 +202,7 @@ func refresh(specifiedChannels []string) {
 		}
 
 		// exit on first success. following channels will be detected on next schedule with help of the history mechanism
-		break
+		return meta, err
 	}
+	return nil, errNoAvailableChannel
 }
