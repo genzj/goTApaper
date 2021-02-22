@@ -3,6 +3,12 @@ os:
   - linux
   - windows
 
+addons:
+  apt:
+    packages:
+      - "libgtk-3-dev"
+      - "libappindicator3-dev"
+
 dist: bionic
 go:
   - 1.14.x
