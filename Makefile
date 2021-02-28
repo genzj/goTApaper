@@ -42,7 +42,10 @@ help:
 	@echo '    make clean           Clean the directory tree.'
 	@echo
 
-build: $(TARGET_DIR) build-other example i18n
+build: build-linux-amd64 build-linux-i386
+
+build-linux-%: $(TARGET_DIR)
+	make go-$@ example i18n
 
 build-windows: $(TARGET_DIR) build-windows-gui build-windows-console example i18n
 
@@ -75,11 +78,18 @@ build-windows-gui: generate $(GO_SOURCES)
 	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
-build-other: generate $(GO_SOURCES)
+go-build-linux-amd64: generate $(GO_SOURCES)
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
-	    gox -arch "amd64 386" -os "linux" -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	    gox -cgo -arch "amd64" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+
+go-build-linux-i386: generate $(GO_SOURCES)
+	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
+	@echo "GOPATH=$(GOPATH)"
+	cd $(TARGET_DIR) && \
+	    PKG_CONFIG_PATH="/usr/lib/i386-linux-gnu/pkgconfig:/usr/lib32/pkgconfig" \
+	    gox -cgo -arch "386" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go

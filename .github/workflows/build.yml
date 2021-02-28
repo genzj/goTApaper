@@ -1,0 +1,150 @@
+name: build
+
+on: [ push, pull_request, workflow_dispatch ]
+
+jobs:
+  build-windows-amd64:
+    runs-on: windows-2019
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+    - uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install tools
+      run: |
+        go get -u github.com/axw/gocov/gocov
+        go get golang.org/x/tools/cmd/cover
+        go get github.com/mitchellh/gox
+
+    - name: Build
+      env:
+        RELEASE: "${{ github.sha }}"
+      run: C:\\msys64\\usr\\bin\\bash.exe -c "make build-windows"
+
+    - name: Test
+      run: make test
+
+    - name: Pack artifacts
+      if: success()
+      run: |
+        cd bin/
+        7z a windows-amd64.zip *.* -r
+
+    - uses: actions/upload-artifact@v2
+      if: success()
+      with:
+        name: windows-amd64.zip
+        path: bin/windows-amd64.zip
+
+
+  build-linux:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        include:
+        - osarch: linux-amd64
+          container: ""
+        # - osarch: linux-i386
+          # container: i386/ubuntu:18.04
+    container: "${{ matrix.container }}"
+    steps:
+    - name: Install basic tools (for i386 only)
+      run: |
+        apt-get update -y
+        apt-get install -y sudo curl
+        curl -fsSL https://deb.nodesource.com/setup_12.x | bash -
+        apt-get install -y nodejs
+      if: startsWith(matrix.container, 'i386')
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y git build-essential libgtk-3-dev libappindicator3-dev
+
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+    
+    - uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install tools
+      run: |
+        go get -u github.com/axw/gocov/gocov
+        go get golang.org/x/tools/cmd/cover
+        go get github.com/mitchellh/gox
+
+    - name: Build
+      env:
+        RELEASE: "${{ github.sha }}"
+      run: make build-${{ matrix.osarch }}
+
+    - name: Test
+      run: make test
+
+    - name: Pack artifacts
+      if: success()
+      run: |
+        cd bin/
+        tar czf "${{ matrix.osarch }}.tgz" *.*
+
+    - uses: actions/upload-artifact@v2
+      if: success()
+      with:
+        name: ${{ matrix.osarch }}.tgz
+        path: bin/${{ matrix.osarch }}.tgz
+
+  release:
+    runs-on: ubuntu-20.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+    - build-windows-amd64
+    - build-linux
+
+    steps:
+    - uses: actions/download-artifact@v2
+      id: download
+      with:
+        path: artifacts
+
+    - name: Echo download path
+      run: |
+        echo ${{steps.download.outputs.download-path}}
+        find ${{steps.download.outputs.download-path}}
+
+    - name: Create release assets
+      id: assets
+      run: |
+        mkdir -p release/
+        find ${{steps.download.outputs.download-path}} -type f | xargs -I A_R_T cp A_R_T release/
+        find release/ -type f
+        echo "::set-output name=release-assets::$(find release/ -type f)"
+
+    - uses: meeDamian/github-release@2.0
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        draft: true
+        allow_override: true
+        files: >
+          release/linux-amd64.tgz
+          release/windows-amd64.zip
+        gzip: false
