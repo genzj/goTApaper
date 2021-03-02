@@ -42,12 +42,10 @@ help:
 	@echo '    make clean           Clean the directory tree.'
 	@echo
 
-build: build-linux-amd64 build-linux-i386
+build: build-os-linux-amd64 build-os-linux-i386
 
-build-linux-%: $(TARGET_DIR)
+build-os-%: $(TARGET_DIR) generate $(GO_SOURCES)
 	make go-$@ example i18n
-
-build-windows: $(TARGET_DIR) build-windows-gui build-windows-console example i18n
 
 $(TARGET_DIR):
 	@test -e $(TARGET_DIR) || mkdir -p $(TARGET_DIR)
@@ -64,13 +62,15 @@ example: $(TARGET_DIR) $(EXAMPLE_TARGETS)
 $(TARGET_DIR)/%.example: examples/%.example
 	cp $^ $@
 
-build-windows-console: generate $(GO_SOURCES)
+go-build-os-windows: go-build-os-windows-gui go-build-os-windows-console
+
+go-build-os-windows-console:
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win console edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
 
-build-windows-gui: generate $(GO_SOURCES)
+go-build-os-windows-gui:
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win gui edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
@@ -78,18 +78,24 @@ build-windows-gui: generate $(GO_SOURCES)
 	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
-go-build-linux-amd64: generate $(GO_SOURCES)
+go-build-os-linux-amd64:
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -cgo -arch "amd64" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
-go-build-linux-i386: generate $(GO_SOURCES)
+go-build-os-linux-i386:
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    PKG_CONFIG_PATH="/usr/lib/i386-linux-gnu/pkgconfig:/usr/lib32/pkgconfig" \
 	    gox -cgo -arch "386" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+
+go-build-os-darwin-amd64:
+	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
+	@echo "GOPATH=$(GOPATH)"
+	cd $(TARGET_DIR) && \
+	    gox -cgo -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go
