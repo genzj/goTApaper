@@ -2,9 +2,7 @@
 :wrench: hello world in Golang.
 
 [![GoDoc](https://godoc.org/github.com/moul/golang-boilerplate?status.svg)](https://godoc.org/github.com/moul/golang-boilerplate)
-[![Build Status](https://travis-ci.org/moul/golang-boilerplate.svg?branch=master)](https://travis-ci.org/moul/golang-boilerplate)
-[![Coverage Status](https://coveralls.io/repos/moul/golang-boilerplate/badge.svg?branch=master&service=github)](https://coveralls.io/github/moul/golang-boilerplate?branch=master)
-[![](https://badge.imagelayers.io/moul/golang-boilerplate:latest.svg)](https://imagelayers.io/?images=moul/golang-boilerplate:latest)
+[![Build Status](https://github.com/genzj/goTApaper/actions/workflows/build.yml/badge.svg)](https://github.com/genzj/goTApaper/actions/workflows/build.yml)
 
 ## Usage
 
@@ -29,3 +27,8 @@ Hello world !
 ## License
 
 MIT
+
+## Credit
+
+* App icon is made by [Smashicons](https://www.flaticon.com/authors/smashicons) from [www.flaticon.com](https://www.flaticon.com/).
+* Systray icon [Sheet of Paper icon](https://icons8.com/icons/set/sheet-of-paper--v1) is made by [Icons8](https://icons8.com).

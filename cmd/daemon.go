@@ -34,8 +34,8 @@ func init() {
 	RootCmd.AddCommand(daemonCmd)
 }
 
-func initSystray(nextCycle nextCycleTrigger) {
-	file, err := data.ExampleAssets.Open("/assets/icons8-picture-240.ico")
+func mustReadIcon(name string) []byte {
+	file, err := data.ExampleAssets.Open("/assets/" + name)
 	if err != nil {
 		logrus.WithError(err).Errorln("cannot load app resource")
 		os.Exit(2)
@@ -46,9 +46,14 @@ func initSystray(nextCycle nextCycleTrigger) {
 		logrus.WithError(err).Errorln("cannot read app resource")
 		os.Exit(2)
 	}
+	return icon
+}
 
-	systray.SetIcon(icon)
-	systray.SetTitle("goTApaper")
+func initSystray(nextCycle nextCycleTrigger) {
+	systrayIcon := mustReadIcon("icons8-sheet-of-paper-systray.ico")
+	templateIcon := mustReadIcon("icons8-sheet-of-paper-template.ico")
+
+	systray.SetTemplateIcon(templateIcon, systrayIcon)
 	systray.SetTooltip("goTApaper")
 
 	mTitle := systray.AddMenuItem("title", "")
