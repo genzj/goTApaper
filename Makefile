@@ -9,6 +9,7 @@ GIT_DIRTY=$(shell test -n "`git status --porcelain`" && echo "+CHANGES" || true)
 IMAGE_NAME := "genzj/goTApaper"
 
 TARGET_DIR := bin
+DARWIN_APP_NAME := goTApaper.app
 
 # NOTE: I exclude the vendor source folder because it's TOO HUGE!
 # So after modify vendor source (rarely happens) or glide-update (may happen),
@@ -95,7 +96,11 @@ go-build-os-darwin-amd64:
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
-	    gox -cgo -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	    gox -cgo -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../... && \
+		mkdir -p ./bundle && \
+		cp -r -f ../contrib/$(DARWIN_APP_NAME) ./bundle/ && \
+		cp -f goTApaper-$(VERSION)-darwin-amd64 ./bundle/$(DARWIN_APP_NAME)/Contents/MacOS/goTApaper && \
+		hdiutil create -volname goTApaper -srcfolder ./bundle -ov -format UDZO goTApaper.dmg
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go

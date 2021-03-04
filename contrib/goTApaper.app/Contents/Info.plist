@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>goTApaper</string>
+	<string>goTApaper.sh</string>
 	<key>CFBundleIconFile</key>
 	<string>goTApaper</string>
 	<key>CFBundleIdentifier</key>
