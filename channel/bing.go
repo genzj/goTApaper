@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
@@ -19,12 +20,19 @@ const (
 	bingGalleryURL  = bingBaseURL + "/HPImageArchive.aspx?format=js&mbl=1&idx=-1&n=5"
 )
 
-var sizeArray = []struct {
-	width int
-	size  string
-}{
-	//{width: 1200, size: "1920x1200"},
-	{width: 1920, size: "1920x1080"},
+type sizeArray = []struct {
+	size string
+}
+
+var fullSizeArray = sizeArray{
+	{size: "UHD"},
+	{size: "1920x1200"},
+	{size: "1920x1080"},
+}
+
+var noLogoSizeArray = sizeArray{
+	{size: "UHD"},
+	{size: "1920x1080"},
 }
 
 type bingItem struct {
@@ -61,9 +69,9 @@ func splitBingCopyright(copyright string, meta *PictureMeta) {
 	meta.Credit = copyright[offset+1 : ending]
 }
 
-func bingFindFirstFit(setting *viper.Viper, urlBase string) (int, string) {
+func bingFindFirstFit(setting *viper.Viper, urlBase string) string {
 	var finalURL string
-	largest := 0
+	var array sizeArray
 	ret := ""
 	strategy := "largest-no-logo"
 
@@ -74,21 +82,19 @@ func bingFindFirstFit(setting *viper.Viper, urlBase string) (int, string) {
 	logrus.Debugf("use strategy %s", strategy)
 	// TODO support manual width selection
 
-	// detect pictures with logo at first because they are in best resolution unless user ask not to
-	if strategy == "largest" {
-		finalURL = bingBaseURL + urlBase + "_1920x1200.jpg"
-		if util.IsReachableLink(finalURL) {
-			return 1200, finalURL
-		}
+	if strategy == config.LargestNoLogo {
+		array = noLogoSizeArray
+	} else {
+		array = fullSizeArray
 	}
 
-	for _, size := range sizeArray {
+	for _, size := range array {
 		finalURL = bingBaseURL + urlBase + "_" + size.size + ".jpg"
 		if util.IsReachableLink(finalURL) {
-			return size.width, finalURL
+			return finalURL
 		}
 	}
-	return largest, ret
+	return ret
 }
 
 type bingWallpaperChannelProvider int
@@ -111,11 +117,9 @@ func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 	logrus.Debugf("JSON loaded %+v", response)
 
 	item := response.Images[0]
-	width, finalURL := bingFindFirstFit(setting, item.URLBase)
+	finalURL := bingFindFirstFit(setting, item.URLBase)
 
 	logrus.WithField(
-		"width", width,
-	).WithField(
 		"finalUrl", finalURL,
 	).WithField(
 		"Copyright", item.Copyright,
