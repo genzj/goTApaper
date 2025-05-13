@@ -2,6 +2,10 @@
 #
 # this is a YAML 1.2 document, for details about its format, refer to: https://yaml.org/
 #
+# common settings such as API keys can be shared by defining an anchor and merging it into various nodes using YAML's
+# "merge key type." For more information, refer to: https://yaml.org/type/merge.html, or search for
+# "pexels-common-settings" in this file for an example.
+#
 # Strategy:
 #   Wallpaper sources normally offer different sizes of a picture for different screen resolutions. The strategy
 # is a hint for the fittest picture.
@@ -50,7 +54,7 @@ reference-width: &width 1920
 reference-height: &height 1080
 
 # watermark can be added to the downloaded picture
-# multiple watermarks can be enabled simutaneously
+# multiple watermarks can be enabled simultaneously
 watermark:
   -
     # name of the font file to be used for watermark
