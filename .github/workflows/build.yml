@@ -2,18 +2,21 @@ name: build
 
 on: [ push, pull_request, workflow_dispatch ]
 
+permissions:
+  contents: write
+
 jobs:
   build-windows-amd64:
-    runs-on: windows-2019
+    runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.16
-    - uses: actions/cache@v2
+        go-version-file: go.mod
+    - uses: actions/cache@v4
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -22,9 +25,7 @@ jobs:
 
     - name: Install tools
       run: |
-        go get -u github.com/axw/gocov/gocov
-        go get golang.org/x/tools/cmd/cover
-        go get github.com/mitchellh/gox
+        go install github.com/mitchellh/gox@latest
 
     - name: Build
       env:
@@ -40,7 +41,7 @@ jobs:
         cd bin/
         7z a windows-amd64.zip *.* -r
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       if: success()
       with:
         name: windows-amd64.zip
@@ -48,7 +49,7 @@ jobs:
 
 
   build-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -69,18 +70,18 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update -y
-        sudo apt-get install -y git build-essential libgtk-3-dev libappindicator3-dev
+        sudo apt-get install -y git build-essential libgtk-3-dev libayatana-appindicator3-dev
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.16
+        go-version-file: go.mod
 
-    - uses: actions/cache@v2
+    - uses: actions/cache@v4
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -89,9 +90,7 @@ jobs:
 
     - name: Install tools
       run: |
-        go get -u github.com/axw/gocov/gocov
-        go get golang.org/x/tools/cmd/cover
-        go get github.com/mitchellh/gox
+        go install github.com/mitchellh/gox@latest
 
     - name: Build
       env:
@@ -107,23 +106,23 @@ jobs:
         cd bin/
         tar czf "${{ matrix.osarch }}.tgz" *.*
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       if: success()
       with:
         name: ${{ matrix.osarch }}.tgz
         path: bin/${{ matrix.osarch }}.tgz
 
   build-darwin-amd64:
-    runs-on: macos-10.15
+    runs-on: macos-13
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.16
-    - uses: actions/cache@v2
+        go-version-file: go.mod
+    - uses: actions/cache@v4
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
@@ -132,9 +131,7 @@ jobs:
 
     - name: Install tools
       run: |
-        go get -u github.com/axw/gocov/gocov
-        go get golang.org/x/tools/cmd/cover
-        go get github.com/mitchellh/gox
+        go install github.com/mitchellh/gox@latest
 
     - name: Build
       env:
@@ -150,14 +147,14 @@ jobs:
         cd bin/
         7z a darwin-amd64.zip *.* -r
 
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v4
       if: success()
       with:
         name: darwin-amd64.zip
         path: bin/darwin-amd64.zip
 
   release:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
     - build-windows-amd64
@@ -165,7 +162,7 @@ jobs:
     - build-linux
 
     steps:
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4
       id: download
       with:
         path: artifacts
@@ -183,13 +180,13 @@ jobs:
         find release/ -type f
         #echo "::set-output name=release-assets::$(find release/ -type f)"
 
-    - uses: meeDamian/github-release@2.0
+    - uses: softprops/action-gh-release@v2
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
         draft: true
-        allow_override: true
-        files: >
-          release/linux-amd64.tgz
+        make_latest: true
+        generate_release_notes: true
+        files: |
           release/windows-amd64.zip
           release/darwin-amd64.zip
-        gzip: false
+          release/linux-amd64.tgz
+        preserve_order: true
