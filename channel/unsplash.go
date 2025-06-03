@@ -3,9 +3,10 @@ package channel
 import (
 	"bytes"
 	"fmt"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"image"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/genzj/goTApaper/util"
@@ -113,18 +114,18 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 	if meta.Title == "" {
 		meta.Title = response.AltDescription
 	}
-	meta.Title = strings.Title(meta.Title)
+	meta.Title = cases.Title(language.Und).String(meta.Title)
 
 	var err error
 	if meta.UploadTime, err = time.Parse(
-		"2006-01-02T15:04:05-07:00", response.UpdatedAt,
+		time.RFC3339, response.UpdatedAt,
 	); err != nil {
 		logrus.WithError(err).Warnf(
 			"cannot parse publish date of %+v", response,
 		)
 	} else {
 		meta.UploadTime = meta.UploadTime.Local()
-		logrus.Debugf("parsed time: %s", meta.UploadTime.Format("2006-01-02T15:04:05-07:00"))
+		logrus.Debugf("parsed time: %s", meta.UploadTime.Format(time.RFC3339))
 	}
 
 	// do my best to obey Unsplash API guidelines:
