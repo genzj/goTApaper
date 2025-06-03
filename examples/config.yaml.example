@@ -75,20 +75,20 @@ watermark:
     # point size of the font
     point: 13
 
-    # If set to false/no, the font point will be calculated dynamically 
+    # If set to false, the font point will be calculated dynamically
     # to keep size of watermarks visually consistent on pictures in various
     # resolution. Font point used for rendering is:
     #   render_point = config_point * (picture_height / reference_height)
-    absolute-point: no
+    absolute-point: false
 
 
-    # If set to false/no, ratio of picture will be taken into consideration
+    # If set to false, ratio of picture will be taken into consideration
     # when position watermarks to keep them in a relatively stable position.
-    absolute-position: no
+    absolute-position: false
 
     # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
     # (rrggbbaa) notation. remember to wrap the value in quotes when it only
-    # contains digitals (e.g. "11223344") or yaml parser will interpret it as
+    # contains digital (e.g. "11223344") or yaml parser will interpret it as
     # an integer
     color: 222222
 
@@ -132,8 +132,8 @@ watermark:
 
       # If set, background will be expanded to the left/right edges
       # (h-throughout) and/or top/bottom edges (v-throughout)
-      h-throughout: yes
-      v-throughout: no
+      h-throughout: true
+      v-throughout: false
 
       # Padding between border of the background to edge of text. Paddings can
       # be specified in array of float with various number of element:
@@ -201,12 +201,12 @@ unsplash-common-settings: &unsplash-common-settings
   # - by-width (recommended, remember to set the width also)
   # - other strategies all download raw links without any scaling
   strategy: by-width
-  width: 1920
+  width: *width
   # one of landscape, portrait, or squarish, read the unsplash API doc for details
   orientation: landscape
   # limit selection to featured photos
   # read the unsplash API doc for details
-  featured: yes
+  featured: true
   image_parameters:
     # parameters to be appended to unsplash picture link, can be used to modify
     # image size or quality.
