@@ -158,6 +158,9 @@ func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 			meta.Channel = setting.GetString("type")
 			meta.ChannelKey = name
 			l.Debugf("picture metadata %##v", meta)
+		} else {
+			l.Warn("no picture metadata")
+			continue
 		}
 
 		if raw == nil || img == nil {
@@ -165,9 +168,9 @@ func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 			continue
 		}
 
-		newImg, err := watermark.Render(img, meta)
+		newImg := actor.DefaultCropper.Crop(img)
 
-		newImg = actor.DefaultCropper.Crop(newImg)
+		newImg, err = watermark.Render(newImg, meta)
 
 		wallpaperFileName := wallpaperPath + "." + meta.Format
 

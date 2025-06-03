@@ -52,5 +52,5 @@ func (Cropper) Crop(im image.Image) image.Image {
 	return im
 }
 
-// DefaultCropper for convinience
+// DefaultCropper for convenience
 var DefaultCropper Cropper
