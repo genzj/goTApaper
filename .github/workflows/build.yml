@@ -39,13 +39,13 @@ jobs:
       if: success()
       run: |
         cd bin/
-        7z a windows-amd64.zip *.* -r
+        7z a goTApaper-windows-amd64.zip *.* -r
 
     - uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: windows-amd64.zip
-        path: bin/windows-amd64.zip
+        name: goTApaper-windows-amd64.zip
+        path: bin/goTApaper-windows-amd64.zip
 
 
   build-linux:
@@ -104,16 +104,16 @@ jobs:
       if: success()
       run: |
         cd bin/
-        tar czf "${{ matrix.osarch }}.tgz" *.*
+        tar czf "goTApaper-${{ matrix.osarch }}.tgz" *.*
 
     - uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: ${{ matrix.osarch }}.tgz
-        path: bin/${{ matrix.osarch }}.tgz
+        name: goTApaper-${{ matrix.osarch }}.tgz
+        path: bin/goTApaper-${{ matrix.osarch }}.tgz
 
-  build-darwin-amd64:
-    runs-on: macos-13
+  build-darwin:
+    runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
       with:
@@ -133,10 +133,15 @@ jobs:
       run: |
         go install github.com/mitchellh/gox@latest
 
-    - name: Build
+    - name: Build amd64
       env:
         RELEASE: "${{ github.sha }}"
       run: make build-os-darwin-amd64
+
+    - name: Build arm
+      env:
+        RELEASE: "${{ github.sha }}"
+      run: make build-os-darwin-arm64
 
     - name: Test
       run: make test
@@ -145,23 +150,28 @@ jobs:
       if: success()
       run: |
         cd bin/
-        7z a darwin-amd64.zip *.* -r
+        7z a goTApaper-darwin-amd64.zip goTApaper-*-darwin-amd64
+        7z a goTApaper-darwin-arm64.zip goTApaper-*-darwin-arm64
+        rm goTApaper-*-darwin-amd64 goTApaper-*-darwin-arm64
 
     - uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: darwin-amd64.zip
-        path: bin/darwin-amd64.zip
+        name: goTApaper-darwin
+        path: bin/*.*
 
   release:
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
     - build-windows-amd64
-    - build-darwin-amd64
+    - build-darwin
     - build-linux
 
     steps:
+    - name: Set version
+      run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
     - uses: actions/download-artifact@v4
       id: download
       with:
@@ -177,6 +187,7 @@ jobs:
       run: |
         mkdir -p release/
         find ${{steps.download.outputs.download-path}} -type f | xargs -I A_R_T cp A_R_T release/
+        find release/ -type f -name 'goTApaper*' -exec bash -c 'f="$1"; d=$(dirname "$f"); b=$(basename "$f"); if [[ "$b" == *.* ]]; then n="${b%.*}"; e="${b##*.}"; mv "$f" "$d/${n}-${{ env.RELEASE_VERSION }}.${e}"; else mv "$f" "$d/${b}-${{ env.RELEASE_VERSION }}"; fi' _ {} \;
         find release/ -type f
         #echo "::set-output name=release-assets::$(find release/ -type f)"
 
@@ -186,7 +197,9 @@ jobs:
         make_latest: true
         generate_release_notes: true
         files: |
-          release/windows-amd64.zip
-          release/darwin-amd64.zip
-          release/linux-amd64.tgz
+          release/config.yaml.example
+          release/goTApaper-windows-*.*
+          release/goTApaper-*.dmg
+          release/goTApaper-linux-*.*
+          release/goTApaper-darwin-*.*
         preserve_order: true

@@ -100,7 +100,17 @@ go-build-os-darwin-amd64:
 		mkdir -p ./bundle && \
 		cp -r -f ../contrib/$(DARWIN_APP_NAME) ./bundle/ && \
 		cp -f goTApaper-$(VERSION)-darwin-amd64 ./bundle/$(DARWIN_APP_NAME)/Contents/MacOS/goTApaper && \
-		hdiutil create -volname goTApaper -srcfolder ./bundle -ov -format UDZO goTApaper.dmg
+		hdiutil create -volname goTApaper -srcfolder ./bundle -ov -format UDZO goTApaper-x86-64.dmg
+
+go-build-os-darwin-arm64:
+	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
+	@echo "GOPATH=$(GOPATH)"
+	cd $(TARGET_DIR) && \
+	    gox -cgo -osarch "darwin/arm64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../... && \
+		mkdir -p ./bundle && \
+		cp -r -f ../contrib/$(DARWIN_APP_NAME) ./bundle/ && \
+		cp -f goTApaper-$(VERSION)-darwin-arm64 ./bundle/$(DARWIN_APP_NAME)/Contents/MacOS/goTApaper && \
+		hdiutil create -volname goTApaper -srcfolder ./bundle -ov -format UDZO goTApaper-Apple-Silicon.dmg
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go
