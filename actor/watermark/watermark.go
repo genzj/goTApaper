@@ -1,7 +1,9 @@
 package watermark
 
 import (
+	"github.com/go-viper/mapstructure/v2"
 	"image"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -37,6 +39,22 @@ type watermarkGroups struct {
 	Watermark []watermarkSetting `mapstructure:"watermark"`
 }
 
+func yesNoToBoolHookFunc() mapstructure.DecodeHookFunc {
+	return func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+		if f.Kind() != reflect.String || t.Kind() != reflect.Bool {
+			return data, nil
+		}
+		logrus.WithField("val", data.(string)).Debugf("convert yes/no to bool")
+		val := strings.ToLower(data.(string))
+		if val == "yes" {
+			return true, nil
+		} else if val == "no" {
+			return false, nil
+		}
+		return data, nil
+	}
+}
+
 // Render watermark to the given image
 func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	type task struct {
@@ -46,7 +64,11 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	tasks := []task{}
 
 	groups := watermarkGroups{}
-	if err := viper.Unmarshal(&groups); err != nil {
+	hooks := mapstructure.ComposeDecodeHookFunc(
+		yesNoToBoolHookFunc(),
+		mapstructure.StringToBoolHookFunc(),
+	)
+	if err := viper.Unmarshal(&groups, viper.DecodeHook(hooks)); err != nil {
 		logrus.WithError(err).Warn(
 			"cannot parse watermark settings, skip watermark rendering",
 		)
