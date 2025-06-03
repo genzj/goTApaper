@@ -1,3 +1,4 @@
+//go:build !darwin
 // +build !darwin
 
 package install
@@ -10,7 +11,15 @@ func preServiceFileInstall() error {
 	return nil
 }
 
-func postServiceFileInstall() error {
+func postServiceFileInstall(startNow bool) error {
+	return nil
+}
+
+func preServiceFileUninstall() error {
+	return nil
+}
+
+func postServiceFileUninstall() error {
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/genzj/goTApaper/install"
 	"io/ioutil"
 	"os"
 
@@ -50,12 +51,30 @@ func initSystray(nextCycle nextCycleTrigger) cycleUpdateCallback {
 
 	systray.AddSeparator()
 
+	mStartup := systray.AddMenuItemCheckbox(
+		"Start at login", "Start the app automatically at login", install.IsInstalled(),
+	)
+	systray.AddSeparator()
+
 	mRefresh := systray.AddMenuItem("Refresh", "Refresh desktop now")
 	mQuitOrig := systray.AddMenuItem("Quit", "Quit the whole app")
 
 	go func() {
 		for {
 			select {
+			case <-mStartup.ClickedCh:
+				if mStartup.Checked() {
+					logrus.Debugln("Disabling startup")
+					_ = install.DisableStartUp()
+				} else {
+					logrus.Debugln("Enabling startup")
+					_ = install.EnableStartUp(false)
+				}
+				if install.IsInstalled() {
+					mStartup.Check()
+				} else {
+					mStartup.Uncheck()
+				}
 			case <-mQuitOrig.ClickedCh:
 				logrus.Debugln("Requesting quit")
 				systray.Quit()

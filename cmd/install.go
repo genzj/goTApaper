@@ -19,5 +19,5 @@ func init() {
 }
 
 func installEntry() {
-	install.InstallStartUp()
+	_ = install.EnableStartUp(true)
 }

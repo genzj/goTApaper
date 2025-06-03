@@ -45,7 +45,11 @@ func preServiceFileInstall() error {
 	return nil
 }
 
-func postServiceFileInstall() error {
+func postServiceFileInstall(startNow bool) error {
+	if !startNow {
+		return nil
+	}
+
 	name := getAppName()
 	user, err := user.Current()
 
@@ -59,6 +63,7 @@ func postServiceFileInstall() error {
 	if err != nil {
 		return err
 	}
+
 	logrus.Debugf("start the service")
 	err = runCommand(
 		"/bin/launchctl",
@@ -66,6 +71,14 @@ func postServiceFileInstall() error {
 		"-k",
 		fmt.Sprintf("gui/%s/%s", user.Uid, name),
 	)
+	return nil
+}
+
+func preServiceFileUninstall() error {
+	return nil
+}
+
+func postServiceFileUninstall() error {
 	return nil
 }
 
