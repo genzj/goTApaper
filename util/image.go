@@ -3,9 +3,12 @@ package util
 import (
 	"bytes"
 	"image"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
+	"os"
+	"runtime"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -18,8 +21,8 @@ func Viewpoint(w0, h0 float64) (w, h float64) {
 	refHeight := viper.GetFloat64("reference-height")
 	fillRatio := refWidth / refHeight
 
-	w1 := float64(w0)
-	h1 := float64(h0)
+	w1 := w0
+	h1 := h0
 
 	logger := logrus.WithFields(map[string]interface{}{
 		"w0":        w0,
@@ -56,13 +59,35 @@ func DecodeFromResponse(resp *http.Response) (raw *bytes.Reader, img image.Image
 		_ = resp.Body.Close()
 	}()
 
-	bs, err := ioutil.ReadAll(resp.Body)
+	bs, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, nil, "", err
 	}
 
 	raw = bytes.NewReader(bs)
 	logrus.WithField("filesize", raw.Len()).Info("wallpaper downloaded")
+
+	reader2 := bytes.NewReader(bs)
+	img, format, err = image.Decode(reader2)
+	if err != nil {
+		return raw, nil, "", err
+	}
+	return raw, img, format, nil
+}
+
+// DecodeFromFile returns picture from a file path
+func DecodeFromFile(filepath string) (raw *bytes.Reader, img image.Image, format string, err error) {
+	if runtime.GOOS == "windows" {
+		filepath, _ = strings.CutPrefix(filepath, "/")
+	}
+
+	bs, err := os.ReadFile(filepath)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	raw = bytes.NewReader(bs)
+	logrus.WithField("filesize", raw.Len()).WithField("filepath", filepath).Info("file loaded")
 
 	reader2 := bytes.NewReader(bs)
 	img, format, err = image.Decode(reader2)
