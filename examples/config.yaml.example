@@ -225,16 +225,14 @@ channels:
     # day" column
     # (https://www.nationalgeographic.com/photography/photo-of-the-day/)
     type: ng-photo-of-today
-    # supported strategy:
-    # - largest (recommended)
-    # - largest-no-logo (same as largest as ng never embeds logo into its photo)
-    # - by-width
-    strategy: largest
+    # Options:
 
   bing:
     # bing-wallpaper downloads picture from Bing.com background
     # (https://www.bing.com)
     type: bing-wallpaper
+
+    # Options:
     # supported strategies:
     # - largest-no-logo (recommended)
     # - largest (use this for better resolution if you can live with the "Bing"

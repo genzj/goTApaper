@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
@@ -50,52 +49,6 @@ type mediaInfo struct {
 		Description string `mapstructure:"description"`
 	} `json:"meta"`
 }
-
-func isBetter(setting *viper.Viper, strategy string, size int, lastSize int) bool {
-	switch strategy {
-	default:
-	case config.Unknown:
-		logrus.Fatalf("unknown strategy: %s", strategy)
-	case config.ByWidth:
-		if !setting.IsSet("width") {
-			logrus.Fatalf("%s must be set to use by-width strategy", ngChannelName+".width")
-		}
-		return size == setting.GetInt("width")
-	case config.LargestNoLogo:
-	case config.Largest:
-		return size > lastSize
-	}
-	return false
-}
-
-//func findFit(setting *viper.Viper, renditions []ngRendition) (int, string) {
-//	largest := 0
-//	ret := ""
-//	strategy := "largest"
-//
-//	if setting.IsSet("strategy") {
-//		strategy = setting.GetString("strategy")
-//	}
-//
-//	if len(renditions) == 0 {
-//		return 0, ret
-//	}
-//
-//	for _, rendition := range renditions {
-//		size, err := strconv.Atoi(rendition.Width)
-//		if err != nil {
-//			logrus.WithError(err).Warnf(
-//				"width in %+v is not an integer, ignore", rendition,
-//			)
-//			continue
-//		}
-//		if isBetter(setting, strategy, size, largest) {
-//			ret = rendition.URL
-//			largest = size
-//		}
-//	}
-//	return largest, ret
-//}
 
 // extractConfigJSON extracts JSON content between `window['__natgeo__'] = {` and `};`
 func extractConfigJSON(r io.Reader) ([]byte, error) {
@@ -195,7 +148,7 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 	picURL := item.Img.SrcURL
 
 	if picURL == "" {
-		return nil, nil, meta, errors.New("No picture URL found")
+		return nil, nil, meta, errors.New("no picture URL found")
 	}
 	base, err := url.Parse(picURL)
 	if err != nil {
@@ -238,7 +191,8 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 	}
 
 	h.Mark(finalURL)
-	historyManager.Save(h)
+	err = historyManager.Save(h)
+	logrus.Warnf("save history error: %v", err)
 
 	return raw, img, meta, nil
 }
