@@ -3,7 +3,7 @@ package util
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -150,7 +150,7 @@ func DoAndReadJSON(req *http.Request, obj interface{}) error {
 		_ = resp.Body.Close()
 	}()
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
@@ -171,3 +171,25 @@ func ReadJSON(url string, obj interface{}) error {
 
 	return DoAndReadJSON(req, obj)
 }
+
+// Extractor is a function type that takes an io.Reader and returns extracted bytes and error
+// It is used to extract JSON contents out of a response unmarshalling
+type Extractor func(io.Reader) ([]byte, error)
+
+// ExtractJSON sends a GET request to the URL, extracts data using the provided Extractor function,
+// and unmarshals the extracted JSON data into obj
+func ExtractJSON(url string, obj interface{}, extract Extractor) error {
+	resp, err := Get(url)
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	data, err := extract(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, obj)
+}
+

@@ -3,10 +3,13 @@ package channel
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"github.com/PaesslerAG/jsonpath"
 	"image"
 	_ "image/jpeg" // for jpeg image codec
+	"io"
 	"net/url"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/genzj/goTApaper/config"
@@ -18,33 +21,34 @@ import (
 
 const (
 	ngChannelName = "ng-photo-of-today"
-	ngBaseURL     = "https://www.nationalgeographic.com/photography/photo-of-the-day/_jcr_content/.gallery.json"
+	ngBaseURL     = "https://www.nationalgeographic.com/photography/photo-of-the-day"
 )
 
-type sizeTable map[int]string
-
-type ngRendition struct {
-	Width string
-	URL   string `json:"uri"`
-}
-
-type ngImage struct {
-	Title      string
-	Caption    string
-	Credit     string
-	URL        string `json:"uri"`
-	Renditions []ngRendition
-	Height     int
-	Width      int
-}
-
-type ngItem struct {
-	Image       ngImage `json:"image"`
-	PublishDate string
-}
-
-type picTable struct {
-	Items []ngItem `json:"items"`
+type mediaInfo struct {
+	// Media type definition based on National Geographic API response
+	Img struct {
+		Crops []struct {
+			Name   string  `mapstructure:"nm"`
+			AspRto float64 `mapstructure:"aspRto"`
+			URL    string  `mapstructure:"url"`
+		} `mapstructure:"crps"`
+		RawURL  string `mapstructure:"rt"`
+		SrcURL  string `mapstructure:"src"`
+		AltText string `mapstructure:"altText"`
+		Credit  string `mapstructure:"crdt"`
+		Desc    string `mapstructure:"dsc"`
+		Title   string `mapstructure:"ttl"`
+	} `mapstructure:"img"`
+	Slug    string `mapstructure:"slug"`
+	Caption struct {
+		Credit string `mapstructure:"credit"`
+		Text   string `mapstructure:"text"`
+		Title  string `mapstructure:"title"`
+	} `mapstructure:"caption"`
+	Meta struct {
+		Title       string `mapstructure:"title"`
+		Description string `mapstructure:"description"`
+	} `json:"meta"`
 }
 
 func isBetter(setting *viper.Viper, strategy string, size int, lastSize int) bool {
@@ -64,40 +68,69 @@ func isBetter(setting *viper.Viper, strategy string, size int, lastSize int) boo
 	return false
 }
 
-func findFit(setting *viper.Viper, renditions []ngRendition) (int, string) {
-	largest := 0
-	ret := ""
-	strategy := "largest"
+//func findFit(setting *viper.Viper, renditions []ngRendition) (int, string) {
+//	largest := 0
+//	ret := ""
+//	strategy := "largest"
+//
+//	if setting.IsSet("strategy") {
+//		strategy = setting.GetString("strategy")
+//	}
+//
+//	if len(renditions) == 0 {
+//		return 0, ret
+//	}
+//
+//	for _, rendition := range renditions {
+//		size, err := strconv.Atoi(rendition.Width)
+//		if err != nil {
+//			logrus.WithError(err).Warnf(
+//				"width in %+v is not an integer, ignore", rendition,
+//			)
+//			continue
+//		}
+//		if isBetter(setting, strategy, size, largest) {
+//			ret = rendition.URL
+//			largest = size
+//		}
+//	}
+//	return largest, ret
+//}
 
-	if setting.IsSet("strategy") {
-		strategy = setting.GetString("strategy")
+// extractConfigJSON extracts JSON content between `window['__natgeo__'] = {` and `};`
+func extractConfigJSON(r io.Reader) ([]byte, error) {
+	const startTag = "window['__natgeo__']={"
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
 	}
 
-	if len(renditions) == 0 {
-		return 0, ret
+	content := string(data)
+	start := strings.Index(content, startTag)
+	if start == -1 {
+		return nil, fmt.Errorf("config start marker not found")
 	}
+	start = start + len(startTag) - 1
 
-	for _, rendition := range renditions {
-		size, err := strconv.Atoi(rendition.Width)
-		if err != nil {
-			logrus.WithError(err).Warnf(
-				"width in %+v is not an integer, ignore", rendition,
-			)
-			continue
+	// Find the matching closing brace
+	level := 0
+	for i := start; i < len(content); i++ {
+		if content[i] == '{' {
+			level++
+		} else if content[i] == '}' {
+			level--
+			if level == 0 {
+				return []byte(content[start : i+1]), nil
+			}
 		}
-		if isBetter(setting, strategy, size, largest) {
-			ret = rendition.URL
-			largest = size
-		}
 	}
-	return largest, ret
+	return nil, fmt.Errorf("matching config end not found")
 }
 
 type ngPoTChannelProvider int
 
 func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
-	var toc picTable
-
+	var page map[string]interface{}
 	historyManager := history.JSONHistoryManagerSingleton
 	h, err := historyManager.Load(ngChannelName)
 	if err != nil {
@@ -106,55 +139,65 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 
 	logrus.Debugf("history of %s channel: %+v", ngChannelName, h)
 
-	if err := util.ReadJSON(ngBaseURL, &toc); err != nil {
+	if err := util.ExtractJSON(ngBaseURL, &page, extractConfigJSON); err != nil {
 		return nil, nil, nil, err
 	}
-	logrus.Debugf("JSON parsed: %#v", toc)
 
-	if len(toc.Items) < 1 {
-		return nil, nil, nil, errors.New("No picture items found")
+	mediaSpotlightEdges, err := jsonpath.Get("$..edgs[?(@.cmsType==\"MediaSpotlightContentsTile\")]", page)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get media spotlight edges: %w", err)
+	}
+	if mediaSpotlightEdges == nil {
+		return nil, nil, nil, errors.New("no media spotlight edges found")
 	}
 
-	item := toc.Items[0].Image
+	edges, ok := mediaSpotlightEdges.([]interface{})
+	if !ok {
+		return nil, nil, nil, errors.New("media spotlight edges is not an array")
+	}
+	if len(edges) == 0 {
+		return nil, nil, nil, errors.New("media spotlight edges array is empty")
+	}
+
+	logrus.Debugf("%d edges parsed: %#v", len(edges), edges)
+
+	edge0, ok := edges[0].(map[string]interface{})
+	if !ok {
+		return nil, nil, nil, errors.New("first edge is not an object")
+	}
+
+	media, ok := edge0["media"]
+	if !ok {
+		return nil, nil, nil, errors.New("no media field in first edge")
+	}
+
+	var items []mediaInfo
+	if err := util.MapToStruct(media, &items); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to unmarshal media data: %w", err)
+	}
+
+	logrus.Debugf("items: %#v", items)
+
+	if len(items) == 0 {
+		return nil, nil, nil, errors.New("no picture items found")
+	}
+
+	item := items[0]
 
 	meta := &PictureMeta{
-		Title:        item.Title,
-		Caption:      item.Caption,
-		Credit:       item.Credit,
-		DownloadTime: time.Now(),
-		UploadTime:   time.Now(),
-	}
-	if meta.UploadTime, err = time.ParseInLocation(
-		"January 2, 2006", toc.Items[0].PublishDate, time.UTC,
-	); err != nil {
-		logrus.WithError(err).Warnf(
-			"cannot parse publish date of %+v", toc.Items[0],
-		)
-	} else {
-		meta.UploadTime = meta.UploadTime.Local()
+		Title:        item.Caption.Title,
+		Caption:      item.Caption.Text,
+		Credit:       item.Caption.Credit,
+		DownloadTime: time.Now().Local(),
+		UploadTime:   time.Now().Local(),
 	}
 
-	if len(item.Renditions) == 0 && item.Width > 0 {
-		logrus.WithField(
-			"width", item.Width,
-		).WithField(
-			"picURL", item.URL,
-		).Debug(
-			"only one candidate",
-		)
-		item.Renditions = []ngRendition{
-			ngRendition{
-				Width: strconv.FormatInt(int64(item.Width), 10), URL: item.URL,
-			},
-		}
-	}
-
-	width, picURL := findFit(setting, item.Renditions)
+	picURL := item.Img.SrcURL
 
 	if picURL == "" {
 		return nil, nil, meta, errors.New("No picture URL found")
 	}
-	base, err := url.Parse(item.URL)
+	base, err := url.Parse(picURL)
 	if err != nil {
 		return nil, nil, meta, err
 	}
@@ -167,21 +210,19 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 	finalURL := base.ResolveReference(downloadURL).String()
 
 	logrus.WithField(
-		"width", width,
-	).WithField(
 		"picURL", picURL,
 	).WithField(
 		"finalUrl", finalURL,
 	).WithField(
-		"title", item.Title,
+		"title", meta.Title,
 	).WithField(
-		"caption", item.Caption,
+		"caption", meta.Caption,
 	).Info(
 		"picture URL decided",
 	)
 
 	if !setting.GetBool("force") && h.Has(finalURL) {
-		logrus.Infoln("ngItem url alreay exists in history file, ignore.")
+		logrus.Infoln("ngItem url already exists in history file, ignore.")
 		return nil, nil, meta, nil
 	}
 
