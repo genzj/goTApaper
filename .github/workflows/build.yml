@@ -132,6 +132,7 @@ jobs:
     - name: Install tools
       run: |
         go install github.com/mitchellh/gox@latest
+        brew install create-dmg
 
     - name: Build amd64
       env:
