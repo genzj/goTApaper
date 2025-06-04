@@ -2,11 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"image/jpeg"
-	"math/rand"
-	"os"
-	"time"
-
 	"github.com/genzj/goTApaper/actor"
 	"github.com/genzj/goTApaper/actor/setter"
 	"github.com/genzj/goTApaper/actor/watermark"
@@ -15,6 +10,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"image/jpeg"
+	"math/rand"
+	"os"
 )
 
 var (
@@ -37,41 +35,45 @@ func init() {
 	viper.BindPFlag("setter", refreshCmd.PersistentFlags().Lookup("setter"))
 	refreshCmd.PersistentFlags().BoolVar(&force, "force", false, "ignore history file and always download")
 	RootCmd.AddCommand(refreshCmd)
-	rand.Seed(time.Now().UnixNano())
 }
 
-func collectActiveChannelsWithProbability() map[string]float32 {
-	ans := map[string]float32{}
-	var last string
+type channelsWithProbability struct {
+	name string
+	p    float32
+}
+
+func addNewChannel(channels []channelsWithProbability, name string, p float32) []channelsWithProbability {
+	return append(channels, channelsWithProbability{
+		name: name,
+		p:    p,
+	})
+}
+
+func collectActiveChannels() []channelsWithProbability {
+	var ans []channelsWithProbability
 
 	activeChannels := viper.Get("active-channels")
 	if channels, ok := activeChannels.([]interface{}); ok {
-	channels_loop:
+	channelsLoop:
 		for _, value := range channels {
-			switch channel := value.(type) {
+			switch ch := value.(type) {
 			case string:
 				// probability is default to 1.0 if channel set as plain string
-				ans[channel] = 1.0
-				last = channel
-			case map[interface{}]interface{}:
-				l := logrus.WithField("definition", channel)
-				if len(channel) != 1 {
+				ans = addNewChannel(ans, ch, 1.0)
+			case map[string]interface{}:
+				l := logrus.WithField("definition", ch)
+				if len(ch) != 1 {
 					l.Warn("invalid channel definition: multiple keys")
-					continue channels_loop
+					continue channelsLoop
 				}
-				for k, v := range channel {
-					if ks, ok := k.(string); !ok {
-						logrus.Warnf("invalid channel definition: non-string key %T %#v", k, k)
-						continue channels_loop
-					} else if vf, ok := v.(float32); ok {
-						ans[ks] = vf
-						last = ks
+				for ks, v := range ch {
+					if vf, ok := v.(float32); ok {
+						ans = addNewChannel(ans, ks, vf)
 					} else if vf, ok := v.(float64); ok {
-						ans[ks] = float32(vf)
-						last = ks
+						ans = addNewChannel(ans, ks, float32(vf))
 					} else {
 						logrus.Warnf("invalid channel definition: non-float key %T %#v", v, v)
-						continue channels_loop
+						continue channelsLoop
 					}
 				}
 			default:
@@ -83,7 +85,7 @@ func collectActiveChannelsWithProbability() map[string]float32 {
 	}
 
 	// probability of the last item is always one to guarantee at least one detection
-	ans[last] = 1.0
+	ans[len(ans)-1].p = 1.0
 	if len(ans) == 0 {
 		logrus.Warnf("no channels found in the configuration file %s", viper.ConfigFileUsed())
 	} else {
@@ -92,10 +94,13 @@ func collectActiveChannelsWithProbability() map[string]float32 {
 	return ans
 }
 
-func collectSpecifiedChannels(specifiedChannels []string) map[string]float32 {
-	ans := map[string]float32{}
+func collectSpecifiedChannels(specifiedChannels []string) []channelsWithProbability {
+	if len(specifiedChannels) == 0 {
+		return nil
+	}
+	var ans []channelsWithProbability
 	for _, ch := range specifiedChannels {
-		ans[ch] = 1
+		ans = addNewChannel(ans, ch, 1.0)
 	}
 	logrus.Debugf("specified channels in args: %#v", ans)
 	return ans
@@ -114,12 +119,10 @@ func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 		}).Fatalf("Config File is not readable: %s", err)
 	}
 
-	wallpaperPath := config.GetWallpaperFileName()
-
 	activeChannels := collectSpecifiedChannels(specifiedChannels)
 
 	if len(activeChannels) == 0 {
-		activeChannels = collectActiveChannelsWithProbability()
+		activeChannels = collectActiveChannels()
 	}
 
 	setterName := viper.GetString("setter")
@@ -129,7 +132,8 @@ func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 	}
 	setter := v.(setter.Setter)
 
-	for name, probability := range activeChannels {
+	for _, ch := range activeChannels {
+		name, probability := ch.name, ch.p
 		l := logrus.WithField("channel", name)
 		dice := rand.Float32()
 		if probability < 1 && dice > probability {
@@ -148,64 +152,81 @@ func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 		setting.Set("force", force)
 		l.Debugf("setting: %#v", setting.AllSettings())
 
-		raw, img, meta, err := channel.Channels.Run(setting.GetString("type"), setting)
-		if err != nil {
-			l.Error(err)
+		if meta, err := detectOneChannel(name, setting, setter); err != nil || meta == nil {
 			continue
-		}
-
-		if meta != nil {
-			meta.Channel = setting.GetString("type")
-			meta.ChannelKey = name
-			l.Debugf("picture metadata %##v", meta)
 		} else {
-			l.Warn("no picture metadata")
-			continue
+			// exit on first success. following channels will be detected on next schedule with help of the history mechanism
+			return meta, err
 		}
 
-		if raw == nil || img == nil {
-			l.Infoln("no image downloaded")
-			continue
-		}
-
-		newImg := actor.DefaultCropper.Crop(img)
-
-		newImg, err = watermark.Render(newImg, meta)
-
-		wallpaperFileName := wallpaperPath + "." + meta.Format
-
-		out, err := os.Create(wallpaperFileName)
-		if err != nil {
-			l.Error(err)
-			continue
-		}
-		defer out.Close()
-
-		if newImg != nil && err == nil {
-			img = newImg
-			err = jpeg.Encode(
-				out, img, &jpeg.Options{
-					Quality: 90,
-				},
-			)
-		} else {
-			// use raw bytes to avoid picture quality loss
-			_, err = raw.WriteTo(out)
-		}
-		if err != nil {
-			l.Error(err)
-			continue
-		}
-
-		logrus.Debug("setting wallpaper...")
-		err = setter.Set(wallpaperFileName)
-		if err != nil {
-			l.Error(err)
-			continue
-		}
-
-		// exit on first success. following channels will be detected on next schedule with help of the history mechanism
-		return meta, err
 	}
 	return nil, errNoAvailableChannel
+}
+
+func detectOneChannel(name string, setting *viper.Viper, setter setter.Setter) (*channel.PictureMeta, error) {
+	l := logrus.WithField("channel", name)
+	wallpaperPath := config.GetWallpaperFileName()
+
+	raw, img, meta, err := channel.Channels.Run(setting.GetString("type"), setting)
+	if err != nil {
+		l.Error(err)
+		return nil, err
+	}
+
+	if meta != nil {
+		meta.Channel = setting.GetString("type")
+		meta.ChannelKey = name
+		l.Debugf("picture metadata %##v", meta)
+	} else {
+		l.Warn("no picture metadata")
+		return nil, err
+	}
+
+	if raw == nil || img == nil {
+		l.Infoln("no image downloaded")
+		return nil, err
+	}
+
+	newImg := actor.DefaultCropper.Crop(img)
+
+	newImg, err = watermark.Render(newImg, meta)
+
+	wallpaperFileName := wallpaperPath + "." + meta.Format
+
+	out, err := os.Create(wallpaperFileName)
+	if err != nil {
+		l.Error(err)
+		return nil, err
+	}
+	defer func(out *os.File) {
+		err := out.Close()
+		if err != nil {
+			logrus.Warnf("error when closing file %s: %s", out.Name(), err)
+		}
+	}(out)
+
+	if newImg != nil {
+		img = newImg
+		err = jpeg.Encode(
+			out, img, &jpeg.Options{
+				Quality: 90,
+			},
+		)
+	} else {
+		// use raw bytes to avoid picture quality loss
+		_, err = raw.WriteTo(out)
+	}
+	if err != nil {
+		l.Error(err)
+		return nil, err
+	}
+
+	logrus.Debug("setting wallpaper...")
+	err = setter.Set(wallpaperFileName)
+	if err != nil {
+		l.Error(err)
+		return nil, err
+	}
+
+	return meta, err
 }
