@@ -53,7 +53,12 @@ func collectActiveChannels() []channelsWithProbability {
 	var ans []channelsWithProbability
 
 	activeChannels := viper.Get("active-channels")
-	if channels, ok := activeChannels.([]interface{}); ok {
+	logrus.Debugf("active channels: %#v %T", activeChannels, activeChannels)
+	if channels, ok := activeChannels.([]string); ok {
+		for _, ch := range channels {
+			ans = addNewChannel(ans, ch, 1.0)
+		}
+	} else if channels, ok := activeChannels.([]interface{}); ok {
 	channelsLoop:
 		for _, value := range channels {
 			switch ch := value.(type) {
@@ -189,7 +194,7 @@ func detectOneChannel(name string, setting *viper.Viper, setter setter.Setter) (
 
 	newImg := actor.DefaultCropper.Crop(img)
 
-	newImg, err = watermark.Render(newImg, meta)
+	newImg, _ = watermark.Render(newImg, meta)
 
 	wallpaperFileName := wallpaperPath + "." + meta.Format
 
@@ -205,7 +210,8 @@ func detectOneChannel(name string, setting *viper.Viper, setter setter.Setter) (
 		}
 	}(out)
 
-	if newImg != nil {
+	if newImg != img {
+		// cropping or rendering changed the photo, save it as jpeg
 		img = newImg
 		err = jpeg.Encode(
 			out, img, &jpeg.Options{

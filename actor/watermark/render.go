@@ -5,8 +5,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/genzj/goTApaper/util"
-
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
@@ -50,20 +48,20 @@ func newRender(im image.Image, setting watermarkSetting) render {
 	}
 }
 
-func (r render) loadBackgroundColor() {
+func (r *render) loadBackgroundColor() {
 	// in case the color in configuration not work
 	r.ctx.SetHexColor(fallbackBackgroundColor)
 	r.ctx.SetHexColor(r.setting.Background.Color)
 }
 
-func (r render) loadTextColor() {
+func (r *render) loadTextColor() {
 	// in case the color in configuration not work
 	r.ctx.SetHexColor(fallbackFontColor)
 	r.ctx.SetHexColor(r.setting.Color)
 }
 
-func (r render) normalizedPoint() float64 {
-	pixelDense := float64(1.0)
+func (r *render) normalizedPoint() float64 {
+	pixelDense := 1.0
 	if !r.setting.AbsolutePoint {
 		refHeight := viper.GetFloat64("reference-height")
 		if math.IsNaN(refHeight) || math.IsInf(refHeight, 0) || refHeight == 0 {
@@ -77,7 +75,7 @@ func (r render) normalizedPoint() float64 {
 	return math.Round(float64(r.setting.Point) * pixelDense)
 }
 
-func (r render) loadFont() error {
+func (r *render) loadFont() error {
 	fontFile, err := findFont(r.setting.Font)
 	if err != nil {
 		logrus.WithError(err).Errorf("cannot find font %s", r.setting.Font)
@@ -97,17 +95,17 @@ func (r render) loadFont() error {
 	return nil
 }
 
-func (r render) position(text string) (x, y, ax, ay, width float64) {
+func (r *render) position(text string) (x, y, ax, ay, width float64) {
 	var maxLineWidth float64 = 0
 	vMargin := r.setting.VMargin
 	hMargin := r.setting.HMargin
 
 	filledHeight := float64(r.ctx.Height())
 	filledWidth := float64(r.ctx.Width())
-	var tCut, rCut, lCut, bCut float64
+	minX, minY, maxX, maxY := 0.0, 0.0, 0.0, 0.0
 	if !r.setting.AbsolutePosition {
-		filledWidth, filledHeight = r.sizeAfterFill()
-		tCut, rCut, bCut, lCut = r.cutAfterFill()
+		filledWidth, filledHeight = r.size()
+		minX, minY, maxX, maxY = r.limits()
 		logrus.WithField(
 			"h", filledHeight,
 		).WithField(
@@ -131,22 +129,22 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 	}
 
 	topOffset := func() float64 {
-		return tCut + vMargin
+		return minY + vMargin
 	}
 	bottomOffset := func() float64 {
-		return float64(r.ctx.Height()) - bCut - vMargin
+		return maxY - vMargin
 	}
 	leftOffset := func() float64 {
-		return lCut + hMargin
+		return minX + hMargin
 	}
 	rightOffset := func() float64 {
-		return float64(r.ctx.Width()) - rCut - hMargin
+		return maxX - hMargin
 	}
 	halfWidth := func() float64 {
-		return float64(r.ctx.Width()) / 2
+		return (maxX - minX) / 2
 	}
 	halfHeight := func() float64 {
-		return float64(r.ctx.Height()) / 2
+		return (maxY - minY) / 2
 	}
 
 	xCalculator := map[string]func() float64{
@@ -171,7 +169,7 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 		positionBottomCenter: bottomOffset,
 		positionBottomRight:  bottomOffset,
 	}
-	aCalculator := map[string][2]float64{
+	anchorTable := map[string][2]float64{
 		positionTopLeft:      [2]float64{0, 0},
 		positionTopCenter:    [2]float64{0.5, 0},
 		positionTopRight:     [2]float64{1, 0},
@@ -191,7 +189,7 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 
 	x = xCalculator[position]()
 	y = yCalculator[position]()
-	a := aCalculator[position]
+	a := anchorTable[position]
 	ax, ay = a[0], a[1]
 	logrus.Debugf("watermark position: %##v", map[string]float64{
 		"x": x, "y": y,
@@ -207,7 +205,7 @@ func (r render) position(text string) (x, y, ax, ay, width float64) {
 	return x, y, ax, ay, maxLineWidth
 }
 
-func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh float64) {
+func (r *render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh float64) {
 	lineSpacing := r.setting.Linespace
 	dc := r.ctx
 	lines := dc.WordWrap(s, width)
@@ -290,7 +288,7 @@ func (r render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh f
 	return bx, by, bw, bh
 }
 
-func (r render) renderText(text string) error {
+func (r *render) renderText(text string) error {
 	alignMap := map[string]gg.Align{
 		alignLeft:   gg.AlignLeft,
 		alignCenter: gg.AlignCenter,
@@ -326,7 +324,7 @@ func (r render) renderText(text string) error {
 	return nil
 }
 
-func (r render) renderBackground(text string) {
+func (r *render) renderBackground(text string) {
 	x, y, ax, ay, width := r.position(text)
 	bx, by, bw, bh := r.boundOf(text, x, y, ax, ay, width)
 	r.ctx.DrawRectangle(bx, by, bw, bh)
@@ -338,7 +336,7 @@ func (r render) renderBackground(text string) {
 	r.ctx.Fill()
 }
 
-func (r render) image() image.Image {
+func (r *render) image() image.Image {
 	return r.ctx.Image()
 }
 
@@ -346,13 +344,12 @@ func (r *render) updateSetting(setting watermarkSetting) {
 	r.setting = setting
 }
 
-func (r render) sizeAfterFill() (w, h float64) {
-	return util.Viewpoint(float64(r.ctx.Width()), float64(r.ctx.Height()))
+func (r *render) size() (w, h float64) {
+	bounds := r.ctx.Image().Bounds()
+	return float64(bounds.Dx()), float64(bounds.Dy())
 }
 
-func (r render) cutAfterFill() (top, right, bottom, left float64) {
-	w, h := r.sizeAfterFill()
-	cutw, cuth := (float64(r.ctx.Width()) - w), (float64(r.ctx.Height()) - h)
-	left, top = cutw/2, cuth/2
-	return top, cutw - left, cuth - top, left
+func (r *render) limits() (minX, minY, maxX, maxY float64) {
+	bounds := r.ctx.Image().Bounds()
+	return float64(bounds.Min.X), float64(bounds.Min.Y), float64(bounds.Max.X), float64(bounds.Max.Y)
 }

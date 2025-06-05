@@ -1,6 +1,8 @@
 package watermark
 
 import (
+	"github.com/genzj/goTApaper/config"
+	"github.com/genzj/goTApaper/util"
 	"image"
 	"strings"
 	"text/template"
@@ -50,7 +52,7 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 		logrus.WithError(err).Warn(
 			"cannot parse watermark settings, skip watermark rendering",
 		)
-		return nil, err
+		return im, err
 	}
 	logrus.Debugf("%d watermark to render", len(groups.Watermark))
 
@@ -81,8 +83,34 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	}
 
 	r := newRender(im, watermarkSetting{})
+	if viper.GetBool("debug-rendering") {
+		minX, minY, maxX, maxY := r.limits()
+		w, h := r.size()
+		logrus.WithField(
+			"w", w,
+		).WithField("minX", minX).WithField("minY", minY).WithField("maxX", maxX).WithField("maxY", maxY).WithField("h", h).WithField("bounds", r.ctx.Image().Bounds()).Debugln("dumping original file before rendering")
+		radius := 25.0
+		r.ctx.Push()
+
+		// Corners
+		r.ctx.DrawCircle(0, 0, radius)
+		r.ctx.DrawCircle(maxX, maxY, radius)
+		r.ctx.SetHexColor("ffff00aa")
+		r.ctx.Fill()
+
+		// Bounds
+		r.ctx.SetLineWidth(5)
+		r.ctx.DrawRectangle(minX, minY, w, h)
+		r.ctx.SetHexColor("ffff00aa")
+		r.ctx.Stroke()
+
+		wallpaperPath := config.GetWallpaperFileName() + "-before-rendering.jpeg"
+		util.SaveImageToJpeg(r.ctx.Image(), wallpaperPath, 75)
+		r.ctx.Pop()
+	}
 
 	// layer-1, background
+	logrus.Debugln("layer-1, background")
 	for idx, task := range tasks {
 		if task.setting.Background.Color == "" {
 			continue
@@ -96,6 +124,7 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	}
 
 	// layer-2, text
+	logrus.Debugln("layer-2, text")
 	for idx, task := range tasks {
 		r.updateSetting(task.setting)
 		if err := r.loadFont(); err != nil {
@@ -107,24 +136,20 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 
 	// layer-3 debug overlay
 	if viper.GetBool("debug-rendering") {
+		logrus.Debugln("layer-3, debug overlay")
 		for _, task := range tasks {
 			r.updateSetting(task.setting)
-			postW, postH := r.sizeAfterFill()
+			postW, postH := r.size()
 			logrus.WithField(
 				"h", postH,
 			).WithField(
 				"w", postW,
 			).Debug("size after fill")
-			tCut, _, _, lCut := r.cutAfterFill()
-			logrus.WithField(
-				"h", tCut,
-			).WithField(
-				"w", lCut,
-			).Debug("pos after cut")
+			minX, minY, _, _ := r.limits()
 			r.ctx.SetHexColor("ff0000")
 			r.ctx.SetLineWidth(5)
 			r.ctx.DrawRectangle(
-				lCut, tCut, postW, postH,
+				minY, minX, postW, postH,
 			)
 			r.ctx.Stroke()
 			r.ctx.DrawLine(

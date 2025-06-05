@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"image"
+	"image/jpeg"
 	"io"
 	"math"
 	"net/http"
@@ -34,6 +35,7 @@ func Viewpoint(w0, h0 float64) (w, h float64) {
 		"w1":        w1,
 		"h1":        h1,
 	})
+	logger.Debugln("before viewpoint locating")
 	if math.IsInf(fillRatio, 0) || math.IsNaN(fillRatio) || fillRatio == 0 {
 		logger.Warn("invalid refence width or height, use original picture")
 	} else {
@@ -48,7 +50,7 @@ func Viewpoint(w0, h0 float64) (w, h float64) {
 			// same ratio, no change
 		}
 	}
-	logger.WithField("w1", w1).WithField("h1", h1).Debug("viewpoint located")
+	logger.WithField("w1", w1).WithField("h1", h1).WithField("ratio", w1/h1).Debugln("after viewpoint locating")
 
 	return w1, h1
 }
@@ -95,4 +97,19 @@ func DecodeFromFile(filepath string) (raw *bytes.Reader, img image.Image, format
 		return raw, nil, "", err
 	}
 	return raw, img, format, nil
+}
+
+func SaveImageToJpeg(img image.Image, filepath string, quality int) error {
+	f, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	err = jpeg.Encode(f, img, &jpeg.Options{Quality: quality})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
