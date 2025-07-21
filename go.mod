@@ -9,7 +9,7 @@ require (
 	github.com/ProtonMail/go-autostart v0.0.0-20250403115856-34830d6457d2
 	github.com/fogleman/gg v1.3.0
 	github.com/getlantern/systray v1.2.2
-	github.com/go-viper/mapstructure/v2 v2.3.0
+	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/sirupsen/logrus v1.9.3
