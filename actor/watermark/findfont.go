@@ -12,9 +12,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Find tries to locate the specified font file in the current directory as
+// findFind tries to locate the specified font file in the directory as
 // well as in platform specific user and system font directories; if there is
-// no exact match, Find tries substring matching.
+// no exact match, tries substring matching.
 func findFont(fileName string) (filePath string, err error) {
 	// check if fileName already points to a readable file
 	if _, err := os.Stat(fileName); err == nil {
@@ -85,7 +85,7 @@ func find(needle string) (filePath string, err error) {
 	}
 
 	for _, dir := range getFontDirectories() {
-		filepath.Walk(dir, walkF)
+		_ = filepath.Walk(dir, walkF)
 		if match != "" {
 			return match, nil
 		}
