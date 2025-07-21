@@ -183,6 +183,18 @@ jobs:
         echo ${{steps.download.outputs.download-path}}
         find ${{steps.download.outputs.download-path}}
 
+      # Generate changelog
+    - run: echo "previous_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> $GITHUB_ENV
+    - name: Generate changelog
+      id: changelog
+      uses: jaywcjlove/changelog-generator@main
+      if: env.previous_tag
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        filter-author: (dependabot|renovate\\[bot\\]|dependabot\\[bot\\]|Renovate Bot)
+        filter: '[R|r]elease[d]\s+[v|V]\d(\.\d+){0,2}'
+        show-emoji: false
+
     - name: Create release assets
       id: assets
       run: |
@@ -196,7 +208,10 @@ jobs:
       with:
         draft: true
         make_latest: true
-        generate_release_notes: true
+        body: |
+          ${{ steps.changelog.outputs.changelog }}
+
+          ${{ steps.changelog.outputs.compareurl }}
         files: |
           release/config.yaml.example
           release/goTApaper-windows-*.*
