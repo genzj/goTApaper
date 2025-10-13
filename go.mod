@@ -1,6 +1,6 @@
 module github.com/genzj/goTApaper
 
-go 1.23.0
+go 1.24.0
 
 toolchain go1.24.3
 
@@ -17,7 +17,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	golang.org/x/net v0.43.0
 	golang.org/x/sys v0.35.0
-	golang.org/x/text v0.28.0
+	golang.org/x/text v0.30.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -53,6 +53,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/image v0.27.0 // indirect
+	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 )
 
 tool github.com/shurcooL/vfsgen
