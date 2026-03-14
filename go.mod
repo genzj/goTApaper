@@ -1,8 +1,6 @@
 module github.com/genzj/goTApaper
 
-go 1.24.0
-
-toolchain go1.24.3
+go 1.25.0
 
 require (
 	github.com/PaesslerAG/jsonpath v0.1.1
@@ -17,7 +15,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	golang.org/x/net v0.48.0
 	golang.org/x/sys v0.41.0
-	golang.org/x/text v0.33.0
+	golang.org/x/text v0.35.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
