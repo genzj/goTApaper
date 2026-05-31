@@ -27,3 +27,18 @@ func setWithCommand(path string, arg ...string) error {
 	}()
 	return nil
 }
+
+func runCommand(path string, arg ...string) (string, error) {
+	cmd := exec.Command(path, arg...)
+	logrus.Debugf("executing command %s %v", path, arg)
+
+	// Output() internally calls Start() and Wait() and captures stdout
+	out, err := cmd.Output()
+	logrus.Debugf("command output: %s", out)
+	if err != nil {
+		logrus.Errorf("executing command failed: %s", err)
+		return string(out), err
+	}
+
+	return string(out), nil
+}
