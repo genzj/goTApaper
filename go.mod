@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/PaesslerAG/jsonpath v0.1.1
-	github.com/ProtonMail/go-autostart v0.0.0-20250403115856-34830d6457d2
+	github.com/ProtonMail/go-autostart v0.0.0-20260210134425-40a9013f5ef4
 	github.com/fogleman/gg v1.3.0
 	github.com/getlantern/systray v1.2.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
