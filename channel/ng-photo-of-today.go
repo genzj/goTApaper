@@ -191,8 +191,9 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 	}
 
 	h.Mark(finalURL)
-	err = historyManager.Save(h)
-	logrus.Warnf("save history error: %v", err)
+	if err := historyManager.Save(h); err != nil {
+		logrus.Warnf("save history error: %v", err)
+	}
 
 	return raw, img, meta, nil
 }

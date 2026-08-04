@@ -180,6 +180,9 @@ type Extractor func(io.Reader) ([]byte, error)
 // and unmarshals the extracted JSON data into obj
 func ExtractJSON(url string, obj interface{}, extract Extractor) error {
 	resp, err := Get(url)
+	if err != nil {
+		return err
+	}
 
 	defer func() {
 		_ = resp.Body.Close()
