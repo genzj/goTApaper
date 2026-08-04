@@ -2,7 +2,7 @@
 
 UNAME := $(shell uname)
 
-VERSION := $(shell git describe --match 'v[0-9]*' --debug | sed -e's/-.*//' -e 's/v//')
+VERSION := $(shell git describe --tags --match 'v[0-9]*' | sed -e's/-.*//' -e 's/v//')
 RELEASE ?= DEV
 GIT_COMMIT=$(shell git rev-parse HEAD)
 GIT_DIRTY=$(shell test -n "`git status --porcelain`" && echo "+CHANGES" || true)
