@@ -1,12 +1,12 @@
 package watermark
 
 import (
+	"github.com/genzj/goTApaper/config"
 	"image"
 	"math"
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 
 	"github.com/fogleman/gg"
 )
@@ -63,7 +63,7 @@ func (r *render) loadTextColor() {
 func (r *render) normalizedPoint() float64 {
 	pixelDense := 1.0
 	if !r.setting.AbsolutePoint {
-		refHeight := viper.GetFloat64("reference-height")
+		refHeight := config.GetFloat64(config.KeyPictureReferenceHeight)
 		if math.IsNaN(refHeight) || math.IsInf(refHeight, 0) || refHeight == 0 {
 			logrus.WithField("reference-height", refHeight).Warn("invalid reference height")
 		} else {
@@ -301,7 +301,7 @@ func (r *render) renderText(text string) error {
 	}
 
 	x, y, ax, ay, width := r.position(text)
-	if viper.GetBool("debug-rendering") {
+	if config.GetBool(config.KeyLogDebugRendering) {
 		r.ctx.SetHexColor("ff00ff")
 		r.ctx.SetLineWidth(5)
 		r.ctx.DrawCircle(x, y, 10)
@@ -328,7 +328,7 @@ func (r *render) renderBackground(text string) {
 	x, y, ax, ay, width := r.position(text)
 	bx, by, bw, bh := r.boundOf(text, x, y, ax, ay, width)
 	r.ctx.DrawRectangle(bx, by, bw, bh)
-	if viper.GetBool("debug-rendering") {
+	if config.GetBool(config.KeyLogDebugRendering) {
 		r.ctx.SetHexColor("ff00ff")
 		r.ctx.StrokePreserve()
 	}

@@ -3,13 +3,13 @@ package util
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/genzj/goTApaper/config"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 
 	"golang.org/x/net/proxy"
 )
@@ -21,7 +21,7 @@ func getHTTPClient() (*http.Client, error) {
 
 	var dialer proxy.Dialer
 
-	conf := viper.GetString("proxy")
+	conf := config.GetString(config.KeyNetworkProxy)
 
 	switch strings.ToLower(conf) {
 	case "direct":
@@ -195,4 +195,3 @@ func ExtractJSON(url string, obj interface{}, extract Extractor) error {
 
 	return json.Unmarshal(data, obj)
 }
-

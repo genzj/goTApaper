@@ -4,8 +4,6 @@ import (
 	"io"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 // TestExtractJSONReturnsErrorOnFailedRequest reproduces the wake-from-sleep
@@ -46,10 +44,10 @@ func TestExtractJSONReturnsErrorOnFailedRequest(t *testing.T) {
 // TestExtractJSONSuccess verifies the happy path still works: a reachable
 // endpoint has its body run through the extractor and unmarshalled.
 func TestExtractJSONSuccess(t *testing.T) {
-	// getHTTPClient() reads "proxy" from viper; force a direct connection so
-	// the test does not depend on ambient proxy configuration.
-	viper.Set("proxy", "direct")
-	defer viper.Set("proxy", "")
+	// getHTTPClient() reads "proxy" from the configuration store. With no
+	// store installed, config.Current() answers from the schema defaults,
+	// where proxy is "direct" -- so this test does not depend on ambient
+	// proxy configuration and needs no fixture.
 
 	srv := httptest.NewServer(nil)
 	defer srv.Close()

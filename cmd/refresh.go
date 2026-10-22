@@ -2,22 +2,22 @@ package cmd
 
 import (
 	"fmt"
+	"image/jpeg"
+	"math/rand"
+	"os"
+
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+
 	"github.com/genzj/goTApaper/actor"
 	"github.com/genzj/goTApaper/actor/setter"
 	"github.com/genzj/goTApaper/actor/watermark"
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	"image/jpeg"
-	"math/rand"
-	"os"
+	"github.com/genzj/goTApaper/config/store"
 )
 
-var (
-	errNoAvailableChannel error = fmt.Errorf("no available channel")
-)
+var errNoAvailableChannel error = fmt.Errorf("no available channel")
 
 var refreshCmd = &cobra.Command{
 	Use:   "refresh",
@@ -31,157 +31,137 @@ var refreshCmd = &cobra.Command{
 var force bool
 
 func init() {
-	refreshCmd.PersistentFlags().String("setter", config.DefaultSetter, "setter to configure desktop wallpaper")
-	viper.BindPFlag("setter", refreshCmd.PersistentFlags().Lookup("setter"))
-	refreshCmd.PersistentFlags().BoolVar(&force, "force", false, "ignore history file and always download")
+	refreshCmd.PersistentFlags().String(
+		"setter", "", "setter to configure desktop wallpaper",
+	)
+	refreshCmd.PersistentFlags().BoolVar(
+		&force, "force", false, "ignore history and always download",
+	)
 	RootCmd.AddCommand(refreshCmd)
 }
 
-type channelsWithProbability struct {
-	name string
-	p    float32
+// collectActiveChannels returns the enabled channels in refresh order.
+//
+// Enablement, probability and order are columns, so this is a single ordered
+// query rather than a walk over a loosely typed list.
+func collectActiveChannels() ([]store.EffectiveChannel, error) {
+	channels, err := currentStore().EffectiveChannels()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(channels) == 0 {
+		logrus.Warn("no enabled channels found; run \"goTApaper config channel list\"")
+		return nil, nil
+	}
+
+	// The last channel always runs, so that every refresh makes at least one
+	// attempt however the probabilities are set.
+	channels[len(channels)-1].Probability = 1.0
+
+	logrus.Debugf("active channels: %+v", channels)
+	return channels, nil
 }
 
-func addNewChannel(channels []channelsWithProbability, name string, p float32) []channelsWithProbability {
-	return append(channels, channelsWithProbability{
-		name: name,
-		p:    p,
-	})
-}
+// collectSpecifiedChannels resolves channels named on the command line. They
+// run unconditionally, and may be disabled ones.
+func collectSpecifiedChannels(names []string) ([]store.EffectiveChannel, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
 
-func collectActiveChannels() []channelsWithProbability {
-	var ans []channelsWithProbability
-
-	activeChannels := viper.Get("active-channels")
-	logrus.Debugf("active channels: %#v %T", activeChannels, activeChannels)
-	if channels, ok := activeChannels.([]string); ok {
-		for _, ch := range channels {
-			ans = addNewChannel(ans, ch, 1.0)
+	s := currentStore()
+	out := make([]store.EffectiveChannel, 0, len(names))
+	for _, name := range names {
+		c, err := s.EffectiveChannel(name)
+		if err != nil {
+			return nil, err
 		}
-	} else if channels, ok := activeChannels.([]interface{}); ok {
-	channelsLoop:
-		for _, value := range channels {
-			switch ch := value.(type) {
-			case string:
-				// probability is default to 1.0 if channel set as plain string
-				ans = addNewChannel(ans, ch, 1.0)
-			case map[string]interface{}:
-				l := logrus.WithField("definition", ch)
-				if len(ch) != 1 {
-					l.Warn("invalid channel definition: multiple keys")
-					continue channelsLoop
-				}
-				for ks, v := range ch {
-					if vf, ok := v.(float32); ok {
-						ans = addNewChannel(ans, ks, vf)
-					} else if vf, ok := v.(float64); ok {
-						ans = addNewChannel(ans, ks, float32(vf))
-					} else {
-						logrus.Warnf("invalid channel definition: non-float key %T %#v", v, v)
-						continue channelsLoop
-					}
-				}
-			default:
-				logrus.Warnf("invalid channel definition: %#v", value)
-			}
-		}
-	} else {
-		logrus.Errorf("active-channels should be defined as a list")
+		c.Probability = 1.0
+		out = append(out, c)
 	}
-
-	// probability of the last item is always one to guarantee at least one detection
-	ans[len(ans)-1].p = 1.0
-	if len(ans) == 0 {
-		logrus.Warnf("no channels found in the configuration file %s", viper.ConfigFileUsed())
-	} else {
-		logrus.Debugf("active channels with probability: %#v", ans)
-	}
-	return ans
-}
-
-func collectSpecifiedChannels(specifiedChannels []string) []channelsWithProbability {
-	if len(specifiedChannels) == 0 {
-		return nil
-	}
-	var ans []channelsWithProbability
-	for _, ch := range specifiedChannels {
-		ans = addNewChannel(ans, ch, 1.0)
-	}
-	logrus.Debugf("specified channels in args: %#v", ans)
-	return ans
+	logrus.Debugf("specified channels in args: %+v", out)
+	return out, nil
 }
 
 func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
-	// reread config, in case refresh is called by daemon after a long sleep
-	// during which user updated the config file
-	if viper.ConfigFileUsed() == "" {
-		logrus.Debugln("Using default config file")
-	} else if err := viper.ReadInConfig(); err == nil {
-		logrus.Debugln("Using config file:", viper.ConfigFileUsed())
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"CfgFile": viper.ConfigFileUsed(),
-		}).Fatalf("Config File is not readable: %s", err)
+	// No config reload here: the store is read live, and a change made through
+	// the API or the CLI emits an event the daemon already listens for.
+	activeChannels, err := collectSpecifiedChannels(specifiedChannels)
+	if err != nil {
+		logrus.WithError(err).Error("cannot resolve the requested channels")
+		return nil, err
 	}
-
-	activeChannels := collectSpecifiedChannels(specifiedChannels)
 
 	if len(activeChannels) == 0 {
-		activeChannels = collectActiveChannels()
+		if activeChannels, err = collectActiveChannels(); err != nil {
+			logrus.WithError(err).Error("cannot load channel configuration")
+			return nil, err
+		}
+	}
+	if len(activeChannels) == 0 {
+		return nil, errNoAvailableChannel
 	}
 
-	setterName := viper.GetString("setter")
+	setterName := config.GetString(config.KeyWallpaperSetter)
 	v, ok := setter.Setters.Get(setterName)
 	if !ok {
 		logrus.Panicf("setter \"%s\" not registered", setterName)
 	}
-	setter := v.(setter.Setter)
+	wallpaperSetter := v.(setter.Setter)
+
+	layers, err := currentStore().WatermarkLayers()
+	if err != nil {
+		logrus.WithError(err).Warn("cannot load watermark layers, continuing without them")
+	}
 
 	for _, ch := range activeChannels {
-		name, probability := ch.name, ch.p
-		l := logrus.WithField("channel", name)
+		l := logrus.WithField("channel", ch.Name)
+
 		dice := rand.Float32()
-		if probability < 1 && dice > probability {
-			l.WithField("dice", dice).WithField("probability", probability).Info("skipped randomly")
-			continue
-		}
-		setting := viper.Sub("channels." + name)
-		if setting == nil {
-			l.Error("cannot find channel definition")
-			continue
-		} else if !setting.IsSet("type") {
-			l.Error("type of channel not set")
+		if ch.Probability < 1 && dice > ch.Probability {
+			l.WithField("dice", dice).WithField(
+				"probability", ch.Probability,
+			).Info("skipped randomly")
 			continue
 		}
 
-		setting.Set("force", force)
-		l.Debugf("setting: %#v", setting.AllSettings())
+		// "force" is decided per run, so it is layered on top of the stored
+		// options rather than written to them.
+		setting := ch.Settings(map[string]any{channel.OptionKeyForce: force})
+		l.Debugf("setting: %+v", ch.Options)
 
-		if meta, err := detectOneChannel(name, setting, setter); err != nil || meta == nil {
+		if meta, err := detectOneChannel(ch, setting, wallpaperSetter, layers); err != nil || meta == nil {
 			continue
 		} else {
-			// exit on first success. following channels will be detected on next schedule with help of the history mechanism
+			// Exit on the first success. The remaining channels get their turn
+			// on the next schedule, and the history mechanism keeps them from
+			// repeating a picture.
 			return meta, err
 		}
-
 	}
 	return nil, errNoAvailableChannel
 }
 
-func detectOneChannel(name string, setting *viper.Viper, setter setter.Setter) (*channel.PictureMeta, error) {
-	l := logrus.WithField("channel", name)
+func detectOneChannel(
+	ch store.EffectiveChannel,
+	setting channel.Settings,
+	wallpaperSetter setter.Setter,
+	layers []store.WatermarkLayer,
+) (*channel.PictureMeta, error) {
+	l := logrus.WithField("channel", ch.Name)
 	wallpaperPath := config.GetWallpaperFileName()
 
-	raw, img, meta, err := channel.Channels.Run(setting.GetString("type"), setting)
+	raw, img, meta, err := channel.Channels.Run(ch.Type, setting)
 	if err != nil {
 		l.Error(err)
 		return nil, err
 	}
 
 	if meta != nil {
-		meta.Channel = setting.GetString("type")
-		meta.ChannelKey = name
-		l.Debugf("picture metadata %##v", meta)
+		meta.Channel = ch.Type
+		meta.ChannelKey = ch.Name
+		l.Debugf("picture metadata %+v", meta)
 	} else {
 		l.Warn("no picture metadata")
 		return nil, err
@@ -194,7 +174,7 @@ func detectOneChannel(name string, setting *viper.Viper, setter setter.Setter) (
 
 	newImg := actor.DefaultCropper.Crop(img)
 
-	newImg, _ = watermark.Render(newImg, meta)
+	newImg, _ = watermark.Render(newImg, meta, layers)
 
 	wallpaperFileName := wallpaperPath + "." + meta.Format
 
@@ -228,7 +208,7 @@ func detectOneChannel(name string, setting *viper.Viper, setter setter.Setter) (
 	}
 
 	logrus.Debug("setting wallpaper...")
-	err = setter.Set(wallpaperFileName)
+	err = wallpaperSetter.Set(wallpaperFileName)
 	if err != nil {
 		l.Error(err)
 		return nil, err

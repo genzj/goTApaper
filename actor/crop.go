@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"github.com/genzj/goTApaper/config"
 	"image"
 	"image/draw"
 	"runtime"
@@ -8,7 +9,6 @@ import (
 	"github.com/genzj/goTApaper/util"
 
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 // Cropper crops picture according to configured reference ratio
@@ -16,7 +16,7 @@ type Cropper int
 
 // Crop picture
 func (Cropper) Crop(im image.Image) image.Image {
-	switch option := viper.GetString("crop"); option {
+	switch option := config.GetString(config.KeyPictureCrop); option {
 	case "no":
 		return im
 	case "win-only":
