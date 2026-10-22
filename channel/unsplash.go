@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -36,7 +36,7 @@ type photoItem struct {
 	}
 }
 
-func getClientID(setting *viper.Viper) string {
+func getClientID(setting Settings) string {
 	key := ""
 	if key = setting.GetString("key"); key == "" {
 		logrus.Fatalf(
@@ -47,7 +47,7 @@ func getClientID(setting *viper.Viper) string {
 	return key
 }
 
-func getListQuery(setting *viper.Viper) string {
+func getListQuery(setting Settings) string {
 	v := url.Values{
 		"client_id": {getClientID(setting)},
 	}
@@ -68,7 +68,7 @@ func getListQuery(setting *viper.Viper) string {
 	return v.Encode()
 }
 
-func getPhotoQuery(setting *viper.Viper) string {
+func getPhotoQuery(setting Settings) string {
 	v := url.Values{
 		"client_id": {getClientID(setting)},
 		"fm":        {"jpg"},
@@ -94,7 +94,7 @@ func getPhotoQuery(setting *viper.Viper) string {
 
 type unsplashWallpaperChannelProvider int
 
-func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
+func (unsplashWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	if getClientID(setting) == "" {
 		return nil, nil, nil, fmt.Errorf("unsplash API access key not set")
 	}
@@ -159,5 +159,41 @@ func (unsplashWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.R
 
 func init() {
 	var me unsplashWallpaperChannelProvider
-	Channels.Register(unsplashChannelName, me)
+	Channels.RegisterWithSchema(unsplashChannelName, me, OptionSchema{
+		Options: []Option{
+			apiKeyOption("https://unsplash.com/oauth/applications"),
+			{
+				Key:   OptionKeyStrategy,
+				Label: "Strategy",
+				Kind:  OptionEnum,
+				// Unsplash resizes by width only; it has no logo-free or
+				// by-size variant, so largest-no-logo is not offered here.
+				EnumValues:  []string{config.ByWidth, config.Largest},
+				Default:     config.ByWidth,
+				Description: "by-width resizes via the API; largest downloads the raw file",
+			},
+			{
+				Key: OptionKeyWidth, Label: "Width", Kind: OptionInt,
+				Description: "target width, required by the by-width strategy",
+			},
+			{
+				Key: "query", Label: "Search keyword", Kind: OptionString,
+				Description: "restrict random photos to this search term",
+			},
+			{
+				Key: "orientation", Label: "Orientation", Kind: OptionEnum,
+				EnumValues:  []string{"landscape", "portrait", "squarish"},
+				Default:     "landscape",
+				Description: "preferred photo orientation",
+			},
+			{
+				Key: "featured", Label: "Featured only", Kind: OptionBool,
+				Description: "limit selection to Unsplash's featured photos",
+			},
+			{
+				Key: "image_parameters", Label: "Image parameters", Kind: OptionStringMap,
+				Description: "extra query parameters appended to the photo URL, e.g. q or dpr",
+			},
+		},
+	})
 }

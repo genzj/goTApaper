@@ -11,7 +11,6 @@ import (
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -69,7 +68,7 @@ func splitBingCopyright(copyright string, meta *PictureMeta) {
 	meta.Credit = copyright[offset+1 : ending]
 }
 
-func bingFindFirstFit(setting *viper.Viper, urlBase string) string {
+func bingFindFirstFit(setting Settings, urlBase string) string {
 	var finalURL string
 	var array sizeArray
 	ret := ""
@@ -99,10 +98,10 @@ func bingFindFirstFit(setting *viper.Viper, urlBase string) string {
 
 type bingWallpaperChannelProvider int
 
-func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
+func (bingWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	var response bingResponse
 
-	historyManager := history.JSONHistoryManagerSingleton
+	historyManager := history.Default
 	h, err := historyManager.Load(bingChannelName)
 	if err != nil {
 		return nil, nil, nil, errors.New("loading history failed")
@@ -167,5 +166,19 @@ func (bingWallpaperChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 
 func init() {
 	var me bingWallpaperChannelProvider
-	Channels.Register(bingChannelName, me)
+	Channels.RegisterWithSchema(bingChannelName, me, OptionSchema{
+		Options: []Option{
+			{
+				Key:   OptionKeyStrategy,
+				Label: "Strategy",
+				Kind:  OptionEnum,
+				// Bing is the only provider that offers a logo-free variant,
+				// and it has no by-size endpoint, so its accepted set differs
+				// from every other channel's.
+				EnumValues:  []string{config.LargestNoLogo, config.Largest, config.ByWidth},
+				Default:     config.LargestNoLogo,
+				Description: "which resolution to download; largest-no-logo avoids the embedded Bing logo",
+			},
+		},
+	})
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	homedir "github.com/mitchellh/go-homedir"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -18,11 +17,8 @@ const (
 )
 
 func loadAppFileName(configKey, defaultValue string) string {
-	if viper.IsSet(configKey) {
-		filename := viper.GetString(configKey)
-		if filename != "" {
-			return MustExpand(filename)
-		}
+	if filename := GetString(configKey); filename != "" {
+		return MustExpand(filename)
 	}
 	p := path.Join(AppDir(), defaultValue)
 	logrus.Debugf("use default value %s for %s", p, configKey)

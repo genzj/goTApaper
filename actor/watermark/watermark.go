@@ -8,7 +8,7 @@ import (
 	"text/template"
 
 	"github.com/genzj/goTApaper/channel"
-	"github.com/spf13/viper"
+	"github.com/genzj/goTApaper/config/store"
 
 	"github.com/sirupsen/logrus"
 )
@@ -35,28 +35,53 @@ type watermarkSetting struct {
 	Background       watermarkBackgroundSetting
 }
 
-type watermarkGroups struct {
-	Watermark []watermarkSetting `mapstructure:"watermark"`
+// fromStoreLayer converts a stored watermark layer into the internal render
+// setting. The renderer keeps its own struct so that render.go needs no
+// knowledge of the storage layer.
+func fromStoreLayer(l store.WatermarkLayer) watermarkSetting {
+	return watermarkSetting{
+		Font:             l.Font,
+		Point:            l.Point,
+		Color:            l.Color,
+		Position:         l.Position,
+		HMargin:          l.HMargin,
+		VMargin:          l.VMargin,
+		Linespace:        l.Linespace,
+		Alignment:        l.Alignment,
+		Template:         l.Template,
+		AbsolutePoint:    l.AbsolutePoint,
+		AbsolutePosition: l.AbsolutePosition,
+		Background: watermarkBackgroundSetting{
+			Paddings:    l.Background.Paddings,
+			HThroughout: l.Background.HThroughout,
+			VThroughout: l.Background.VThroughout,
+			Color:       l.Background.Color,
+		},
+	}
 }
 
-// Render watermark to the given image
-func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
+// Render draws the given watermark layers onto an image.
+//
+// Layers are passed in rather than read from a global, so that the caller that
+// already owns the store supplies them and this package needs no ambient
+// configuration beyond the rendering debug flag.
+func Render(im image.Image, meta *channel.PictureMeta, layers []store.WatermarkLayer) (image.Image, error) {
 	type task struct {
 		text    string
 		setting watermarkSetting
 	}
 	tasks := []task{}
 
-	groups := watermarkGroups{}
-	if err := viper.Unmarshal(&groups); err != nil {
-		logrus.WithError(err).Warn(
-			"cannot parse watermark settings, skip watermark rendering",
-		)
-		return im, err
+	settings := make([]watermarkSetting, 0, len(layers))
+	for _, l := range layers {
+		if !l.Enabled {
+			continue
+		}
+		settings = append(settings, fromStoreLayer(l))
 	}
-	logrus.Debugf("%d watermark to render", len(groups.Watermark))
+	logrus.Debugf("%d watermark to render", len(settings))
 
-	for idx, setting := range groups.Watermark {
+	for idx, setting := range settings {
 		logrus.Debugf("start rendering watermark %##v", setting)
 		template := template.New("watermark")
 		template, err := template.Parse(setting.Template)
@@ -83,7 +108,7 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	}
 
 	r := newRender(im, watermarkSetting{})
-	if viper.GetBool("debug-rendering") {
+	if config.GetBool(config.KeyLogDebugRendering) {
 		minX, minY, maxX, maxY := r.limits()
 		w, h := r.size()
 		logrus.WithField(
@@ -135,7 +160,7 @@ func Render(im image.Image, meta *channel.PictureMeta) (image.Image, error) {
 	}
 
 	// layer-3 debug overlay
-	if viper.GetBool("debug-rendering") {
+	if config.GetBool(config.KeyLogDebugRendering) {
 		logrus.Debugln("layer-3, debug overlay")
 		for _, task := range tasks {
 			r.updateSetting(task.setting)

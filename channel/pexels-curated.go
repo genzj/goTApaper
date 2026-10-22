@@ -14,7 +14,6 @@ import (
 
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 type pexelsPhotoObject struct {
@@ -63,8 +62,8 @@ func extractTitleFromURL(pageURL string) string {
 
 type pexelsCuratedChannelProvider int
 
-func (pexelsCuratedChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
-	historyManager := history.JSONHistoryManagerSingleton
+func (pexelsCuratedChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
+	historyManager := history.Default
 	h, err := historyManager.Load(pexelsCuratedChannelName)
 	if err != nil {
 		return nil, nil, nil, errors.New("loading history failed")
@@ -140,5 +139,31 @@ func (pexelsCuratedChannelProvider) Download(setting *viper.Viper) (*bytes.Reade
 
 func init() {
 	var me pexelsCuratedChannelProvider
-	Channels.Register(pexelsCuratedChannelName, me)
+	Channels.RegisterWithSchema(pexelsCuratedChannelName, me, OptionSchema{
+		Options: []Option{
+			apiKeyOption("https://www.pexels.com/api/new/"),
+			{
+				Key:   OptionKeyStrategy,
+				Label: "Strategy",
+				Kind:  OptionEnum,
+				// Pexels is the only provider with a by-size endpoint.
+				EnumValues:  []string{config.BySize, config.Largest},
+				Default:     config.BySize,
+				Description: "by-size scales to width and height; largest downloads the original",
+			},
+			{
+				Key: OptionKeyWidth, Label: "Width", Kind: OptionInt,
+				Description: "target width, required by the by-size strategy",
+			},
+			{
+				Key: OptionKeyHeight, Label: "Height", Kind: OptionInt,
+				Description: "target height, required by the by-size strategy",
+			},
+			{
+				Key: "dpr", Label: "Device pixel ratio", Kind: OptionInt,
+				Default:     "1",
+				Description: "pixel density multiplier applied to the requested size",
+			},
+		},
+	})
 }

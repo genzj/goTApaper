@@ -15,7 +15,6 @@ import (
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -82,9 +81,9 @@ func extractConfigJSON(r io.Reader) ([]byte, error) {
 
 type ngPoTChannelProvider int
 
-func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image.Image, *PictureMeta, error) {
+func (ngPoTChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	var page map[string]interface{}
-	historyManager := history.JSONHistoryManagerSingleton
+	historyManager := history.Default
 	h, err := historyManager.Load(ngChannelName)
 	if err != nil {
 		return nil, nil, nil, errors.New("loading history failed")
@@ -200,5 +199,7 @@ func (ngPoTChannelProvider) Download(setting *viper.Viper) (*bytes.Reader, image
 
 func init() {
 	var me ngPoTChannelProvider
-	Channels.Register(ngChannelName, me)
+	// National Geographic's photo of the day takes no options: there is one
+	// picture per day at one resolution.
+	Channels.RegisterWithSchema(ngChannelName, me, OptionSchema{})
 }

@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"github.com/genzj/goTApaper/config"
 	"image"
 	"image/jpeg"
 	"io"
@@ -12,14 +13,13 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 )
 
 // Viewpoint returns the visible region of a image after being centered and
 // filling the desktop
 func Viewpoint(w0, h0 float64) (w, h float64) {
-	refWidth := viper.GetFloat64("reference-width")
-	refHeight := viper.GetFloat64("reference-height")
+	refWidth := config.GetFloat64(config.KeyPictureReferenceWidth)
+	refHeight := config.GetFloat64(config.KeyPictureReferenceHeight)
 	fillRatio := refWidth / refHeight
 
 	w1 := w0
