@@ -396,6 +396,66 @@ func TestProtectedPathsIncludesTheCallersPaths(t *testing.T) {
 	}
 }
 
+// TestCurrentSlot pins which of several desktops' wallpapers is treated as the
+// one a new wallpaper has to differ from.
+func TestCurrentSlot(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		paths []string
+		want  string
+	}{
+		{
+			name:  "every desktop agrees",
+			paths: []string{"/app/wallpaper_osx_0.jpeg", "/app/wallpaper_osx_0.jpeg"},
+			want:  "/app/wallpaper_osx_0.jpeg",
+		},
+		{
+			// Ours is what matters, wherever it appears in the list: that is
+			// the path the next refresh must not reuse.
+			name:  "ours is not first",
+			paths: []string{"/Users/me/Pictures/mine.jpeg", "/app/wallpaper_osx_1.jpeg"},
+			want:  "/app/wallpaper_osx_1.jpeg",
+		},
+		{
+			// Right after the user sets a wallpaper by hand, none is ours.
+			name:  "none is ours",
+			paths: []string{"/Users/me/Pictures/mine.jpeg", "/Users/me/Pictures/other.jpeg"},
+			want:  "/Users/me/Pictures/mine.jpeg",
+		},
+		{name: "nothing reported", paths: nil, want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := currentSlot(tc.paths); got != tc.want {
+				t.Errorf("currentSlot(%v) = %q, want %q", tc.paths, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestNextSlotAvoidsTheCurrentOne is the property the whole two-slot scheme
+// rests on: the path handed to macOS must differ from the one on screen, or
+// the wallpaper will not be re-rendered at all.
+func TestNextSlotAvoidsTheCurrentOne(t *testing.T) {
+	const dir = "/app"
+
+	zero, err := filepath.Abs(filepath.Join(dir, wallpaperSlots[0]+".jpeg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := nextSlot(zero, dir, ".jpeg"); got != wallpaperSlots[1] {
+		t.Errorf("with slot 0 on screen, next = %q, want %q", got, wallpaperSlots[1])
+	}
+	// Nothing of ours on screen, so either slot is free; slot 0 is the one
+	// tried first.
+	if got := nextSlot("/Users/me/Pictures/mine.jpeg", dir, ".jpeg"); got != wallpaperSlots[0] {
+		t.Errorf("with a foreign wallpaper on screen, next = %q, want %q", got, wallpaperSlots[0])
+	}
+	if got := nextSlot("", dir, ".jpeg"); got != wallpaperSlots[0] {
+		t.Errorf("with nothing known, next = %q, want %q", got, wallpaperSlots[0])
+	}
+}
+
 // TestHumanBytes covers the boundaries, since the cleanup command's headline
 // number is the only thing most users will read.
 func TestHumanBytes(t *testing.T) {

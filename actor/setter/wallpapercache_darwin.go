@@ -143,6 +143,9 @@ type PruneStats struct {
 	// OrphanCopies are files in the extension's cache that no surviving entry
 	// references. Nothing can reach them again, and no entry's removal will
 	// ever account for them, so they would otherwise sit there forever.
+	//
+	// Only populated under AllPhotos: a copy carries no record of the image it
+	// was made from, so one of ours cannot be told from another app's.
 	OrphanCopies []string
 
 	// OrphanCopyBytes is the total size of OrphanCopies.
@@ -226,7 +229,13 @@ func PruneWallpaperCaches(opts PruneOptions) (PruneStats, error) {
 	// matched to the entry being dropped, instead of guessing from age.
 	planRendersForEntries(&stats, keepPrefixes(decoded, stats.Entries), canAttribute)
 
-	if canAttribute {
+	// Orphan copies are only swept under AllPhotos. A copy file is a UUID with
+	// no record of where it came from, so unlike an entry or a bitmap there is
+	// nothing in it to attribute: an orphan left behind by some other app's
+	// wallpaper is indistinguishable from one of ours. Removing those is a
+	// decision for the user to confirm, not something to do behind their back
+	// on every refresh.
+	if canAttribute && opts.AllPhotos {
 		planOrphanCopies(&stats, decoded, snapshot)
 	}
 
@@ -291,13 +300,17 @@ func protectedPaths(keep []string) map[string]bool {
 		add(path)
 	}
 
-	current, err := currentWallpaper()
+	// Every desktop's wallpaper, not just one: with several displays they need
+	// not agree, and each one on screen has to survive.
+	current, err := currentWallpapers()
 	if err != nil {
 		// Not fatal when the caller named a path; it just means the only
 		// protection is the one it named.
-		logrus.WithError(err).Debug("cannot read the current wallpaper path")
+		logrus.WithError(err).Debug("cannot read the current wallpaper paths")
 	}
-	add(current)
+	for _, path := range current {
+		add(path)
+	}
 
 	return protected
 }
