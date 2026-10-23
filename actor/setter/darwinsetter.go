@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/util"
@@ -24,8 +25,8 @@ import (
 // Earlier revisions got that by suffixing a timestamp, which gave a brand new
 // path every refresh. That turned out to be expensive: the wallpaper agent
 // treats each distinct path as a photo the user added, and keeps both an index
-// entry and its own full-size copy of the file forever. Two thousand refreshes
-// left roughly 4 GiB behind (see wallpapercache_darwin.go).
+// entry and its own full-size copy of the file forever (see
+// wallpapercache_darwin.go).
 //
 // Alternating between two fixed names keeps the path different from the
 // current one -- which is all the renderer needs -- while the agent only ever
@@ -50,15 +51,17 @@ func (_ DarwinSetter) Set(file string) error {
 	dir, filename := filepath.Split(file)
 	ext := filepath.Ext(filename)
 
-	current, err := currentWallpaper()
+	paths, err := currentWallpapers()
 	if err != nil {
 		// Not fatal: without knowing the current wallpaper we may pick the
 		// slot already in use and the desktop will not change this once, but
 		// the next refresh picks the other one.
-		logrus.WithError(err).Debug("cannot read the current wallpaper path")
+		logrus.WithError(err).Debug("cannot read the current wallpaper paths")
 	}
 
-	wallpaperPath, err := filepath.Abs(filepath.Join(dir, nextSlot(current, dir, ext)+ext))
+	wallpaperPath, err := filepath.Abs(
+		filepath.Join(dir, nextSlot(currentSlot(paths), dir, ext)+ext),
+	)
 	if err != nil {
 		return err
 	}
@@ -106,41 +109,66 @@ func nextSlot(current, dir, ext string) string {
 	return wallpaperSlots[0]
 }
 
-// currentWallpaper asks the system which file it is displaying. Every desktop
-// gets the same wallpaper, so the first line of the reply is enough.
-func currentWallpaper() (string, error) {
+// currentWallpapers asks the system which file each desktop is displaying.
+//
+// The reply is one path per desktop, comma-separated on a single line. All of
+// them are returned: the desktops usually agree, but they need not, and a
+// caller deciding what is safe to delete has to account for every one.
+func currentWallpapers() ([]string, error) {
 	out, err := runCommand(
 		"osascript", "-e",
 		`tell application "System Events" to tell every desktop to get picture`,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// A list of paths, one per desktop, comma-separated on a single line.
-	path := out
-	for i, c := range out {
-		if c == ',' || c == '\n' {
-			path = out[:i]
-			break
+	var paths []string
+	for _, field := range strings.Split(out, ",") {
+		path := strings.TrimSpace(field)
+		if path == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			paths = append(paths, abs)
 		}
 	}
-	if path == "" {
-		return "", fmt.Errorf("no current wallpaper reported")
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no current wallpaper reported")
 	}
-	return filepath.Abs(path)
+	return paths, nil
+}
+
+// currentSlot reports which of our slot files the system is displaying.
+//
+// With several desktops the reply can name several files, so the one that
+// matters is whichever is a slot of ours -- that is the path a new wallpaper
+// must differ from. Falling back to the first path keeps the comparison
+// meaningful when none is ours, which is what happens on the first refresh
+// after the user has set a wallpaper by hand.
+func currentSlot(paths []string) string {
+	for _, path := range paths {
+		if strings.HasPrefix(filepath.Base(path), wallpaperSlotPrefix) {
+			return path
+		}
+	}
+	if len(paths) > 0 {
+		return paths[0]
+	}
+	return ""
 }
 
 // pruneWallpaperCaches reclaims the copies and rendered bitmaps macOS keeps
 // for the wallpaper this refresh just replaced.
 //
-// It runs on every refresh. An earlier revision throttled it behind a count of
-// index entries, from when a timestamped filename meant those entries grew
-// without bound. Two things make that wrong now: the two slots cap the entries
-// at two, so any useful threshold is never reached, while the bitmaps -- 15
-// MiB each -- do still accumulate one per refresh. And the cost that motivated
-// throttling is gone: nothing is restarted and the desktop is not redrawn, so
-// there is nothing to spare the user from.
+// Running it on every refresh is deliberate, and cheap: reading the index, one
+// directory listing and a handful of unlink calls, against a refresh that has
+// just downloaded an image over the network. Nothing is restarted and the
+// desktop is not redrawn, so there is nothing to batch or defer. It also needs
+// to be this often, because the agent writes a fresh bitmap every time a
+// wallpaper is applied -- one accumulates per refresh even though the two
+// slots cap the index entries at two.
+//
 // justSet is the path handed to osascript a moment ago. It has to be named
 // explicitly: the agent switches asynchronously, so asking it which wallpaper
 // is current here still returns the previous one, and the wallpaper just
@@ -166,10 +194,8 @@ func pruneWallpaperCaches(justSet string) {
 		return
 	}
 	logrus.Infof(
-		"reclaimed %s from the macOS wallpaper caches "+
-			"(%d picker entries, %d rendered bitmaps, %d unreferenced copies)",
-		HumanBytes(stats.TotalBytes),
-		len(stats.Entries), len(stats.Renders), len(stats.OrphanCopies),
+		"reclaimed %s from the macOS wallpaper caches (%d picker entries, %d rendered bitmaps)",
+		HumanBytes(stats.TotalBytes), len(stats.Entries), len(stats.Renders),
 	)
 }
 

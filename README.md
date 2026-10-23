@@ -159,8 +159,13 @@ make build-os-windows
     goTApaper reuses two filenames so it only ever adds two entries, and after
     each refresh removes the copies and bitmaps belonging to the wallpaper it
     replaced. Nothing is restarted and the desktop is not redrawn, so this is
-    invisible; set `picture.macos-cache-cleanup` to `false` to turn it off. To
-    reclaim space on demand:
+    invisible. To turn it off:
+
+    ```bash
+    ./goTApaper config set picture.macos-cache-cleanup false
+    ```
+
+    To reclaim space on demand:
 
     ```bash
     # Review what would go, change nothing
@@ -169,19 +174,28 @@ make build-os-windows
     # Remove goTApaper's own entries, copies and rendered bitmaps
     ./goTApaper cleanup
 
-    # Also remove entries other apps created, after confirming
+    # Also remove entries other apps created, and cached copies nothing
+    # references any more, after confirming
     ./goTApaper cleanup --wipe-all-photos
     ```
 
     A rendered bitmap is named
-    `<sha256(original image path)>-<width>-<height>-<scale>-<set time>.bmp`, so
-    each one can be matched to the image it renders and only the bitmaps
-    belonging to removed entries are deleted — wallpapers you set yourself keep
-    theirs. The entry for the wallpaper currently on screen, and its renders,
-    are always kept. Add `--restart-agent` if an already-open System Settings
-    pane still shows stale thumbnails; it briefly blanks the desktop.
+    `<sha256(original image path)>-<width>-<height>-<scale>-<set time>.bmp`. The
+    hashed path is the wallpaper file in goTApaper's application directory, so
+    goTApaper only ever produces **two** distinct prefixes — but a *new* bitmap
+    per application, since the set time is part of the name, and one per display
+    size. They are what accumulate between cleanups; the prefix is what lets
+    each one be matched to the image it renders, so only the bitmaps of removed
+    entries are deleted and wallpapers you set yourself keep theirs. The entry
+    for the wallpaper currently on screen, and its renders, are always kept. Add
+    `--restart-agent` if an already-open System Settings pane still shows stale
+    thumbnails; it briefly blanks the desktop.
 
     To do the same by hand, without goTApaper:
+
+    > ⚠️ Unlike `cleanup`, these commands clear the **whole** "Your Photos"
+    > list and every cached copy, including photos you added yourself. There is
+    > no undo.
 
     ```bash
     killall WallpaperImageExtension
@@ -190,9 +204,6 @@ make build-os-windows
     rm -f ~/Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/com.apple.wallpaper.caches/extension-com.apple.wallpaper.extension.image/*.bmp
     killall WallpaperAgent
     ```
-
-    Note this clears the whole "Your Photos" list, including photos you added
-    yourself.
 
 #### Debug Mode
 
