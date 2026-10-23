@@ -51,6 +51,16 @@ crop: "yes"
 reference-width: &width 1920
 reference-height: &height 1080
 
+picture:
+  # macOS only. Every time a wallpaper is applied, macOS remembers the image
+  # path as a photo you added, keeps its own full-size copy of the file, and
+  # keeps a ~15MiB rendered bitmap of it -- see "Your Photos" in
+  # System Settings > Wallpaper. Nothing expires them. When true, goTApaper
+  # removes the copies and bitmaps of the wallpapers it has replaced after
+  # each refresh; wallpapers you set yourself are left alone. Use the
+  # "cleanup" command to reclaim space on demand.
+  macos-cache-cleanup: true
+
 # watermark can be added to the downloaded picture
 # multiple watermarks can be enabled simultaneously
 watermark:

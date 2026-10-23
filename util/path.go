@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kardianos/osext"
 	"github.com/sirupsen/logrus"
@@ -54,6 +55,33 @@ func CopyFile(src, dst string) (int64, error) {
 		logrus.Errorf("error in file copying %s", err)
 	}
 	return nBytes, err
+}
+
+// IsPathUnder reports whether path lies inside dir.
+//
+// It compares cleaned absolute paths and requires a separator at the boundary,
+// so "/tmp/abc" is not treated as living under "/tmp/ab". A path equal to dir
+// counts as inside it. Used to confine deletions to a directory they are
+// supposed to stay in.
+func IsPathUnder(path, dir string) bool {
+	if dir == "" {
+		return false
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+
+	rel, err := filepath.Rel(absDir, absPath)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 type ConfirmRemove func(path string) bool

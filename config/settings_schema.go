@@ -106,6 +106,8 @@ const (
 	KeyPictureReferenceWidth  = "picture.reference-width"
 	KeyPictureReferenceHeight = "picture.reference-height"
 
+	KeyPictureMacOSCacheCleanup = "picture.macos-cache-cleanup"
+
 	KeyWallpaperSetter   = "wallpaper.setter"
 	KeyWallpaperFileName = "wallpaper.file-name"
 
@@ -183,6 +185,12 @@ func buildDefinitions() []Definition {
 			Label:       "Reference height",
 			Description: "reference display height, used for cropping and watermark sizing",
 			LegacyKeys:  []string{"reference-height"},
+		},
+		{
+			Key: KeyPictureMacOSCacheCleanup, Kind: KindBool, Default: "true",
+			Label: "macOS wallpaper cache cleanup",
+			Description: "macOS only: after applying a wallpaper, remove the copies and " +
+				"rendered bitmaps the system keeps for wallpapers goTApaper has replaced",
 		},
 		{
 			Key: KeyWallpaperSetter, Kind: KindEnum, Default: DefaultSetter,

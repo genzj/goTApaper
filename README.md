@@ -139,6 +139,61 @@ make build-os-windows
     proxy: socks5://127.0.0.1:1080
     ```
 
+3. macOS: disk filling up with old wallpapers
+
+    Every time a wallpaper is applied, macOS records the image path as a photo
+    you added and keeps its own full-size copy of the file. You can see them
+    piling up under **System Settings > Wallpaper > Your Photos**. Nothing
+    expires them, so after a few thousand refreshes this can reach several
+    gigabytes across three places:
+
+    | What | Where |
+    | --- | --- |
+    | The "Your Photos" index | `~/Library/Containers/com.apple.wallpaper.extension.image/Data/Library/Preferences/com.apple.wallpaper.extension.image.plist` (`ChoiceRequests.ImageFiles`) |
+    | A full-size copy per entry | `~/Library/Containers/com.apple.wallpaper.extension.image/Data/Library/Caches/` |
+    | Rendered bitmaps | `~/Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/com.apple.wallpaper.caches/extension-com.apple.wallpaper.extension.image/` |
+
+    Deleting only the rendered bitmaps is why the thumbnails come back: the
+    index and the copies live elsewhere.
+
+    goTApaper reuses two filenames so it only ever adds two entries, and after
+    each refresh removes the copies and bitmaps belonging to the wallpaper it
+    replaced. Nothing is restarted and the desktop is not redrawn, so this is
+    invisible; set `picture.macos-cache-cleanup` to `false` to turn it off. To
+    reclaim space on demand:
+
+    ```bash
+    # Review what would go, change nothing
+    ./goTApaper cleanup --dry-run
+
+    # Remove goTApaper's own entries, copies and rendered bitmaps
+    ./goTApaper cleanup
+
+    # Also remove entries other apps created, after confirming
+    ./goTApaper cleanup --wipe-all-photos
+    ```
+
+    A rendered bitmap is named
+    `<sha256(original image path)>-<width>-<height>-<scale>-<set time>.bmp`, so
+    each one can be matched to the image it renders and only the bitmaps
+    belonging to removed entries are deleted — wallpapers you set yourself keep
+    theirs. The entry for the wallpaper currently on screen, and its renders,
+    are always kept. Add `--restart-agent` if an already-open System Settings
+    pane still shows stale thumbnails; it briefly blanks the desktop.
+
+    To do the same by hand, without goTApaper:
+
+    ```bash
+    killall WallpaperImageExtension
+    defaults delete ~/Library/Containers/com.apple.wallpaper.extension.image/Data/Library/Preferences/com.apple.wallpaper.extension.image.plist ChoiceRequests.ImageFiles
+    rm -f ~/Library/Containers/com.apple.wallpaper.extension.image/Data/Library/Caches/*.jpeg
+    rm -f ~/Library/Containers/com.apple.wallpaper.agent/Data/Library/Caches/com.apple.wallpaper.caches/extension-com.apple.wallpaper.extension.image/*.bmp
+    killall WallpaperAgent
+    ```
+
+    Note this clears the whole "Your Photos" list, including photos you added
+    yourself.
+
 #### Debug Mode
 
 Enable debug logging:
