@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
+	"image"
 	"image/jpeg"
 	"math/rand"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -15,6 +19,7 @@ import (
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
+	"github.com/genzj/goTApaper/history"
 )
 
 var errNoAvailableChannel error = fmt.Errorf("no available channel")
@@ -150,7 +155,6 @@ func detectOneChannel(
 	layers []store.WatermarkLayer,
 ) (*channel.PictureMeta, error) {
 	l := logrus.WithField("channel", ch.Name)
-	wallpaperPath := config.GetWallpaperFileName()
 
 	raw, img, meta, err := channel.Channels.Run(ch.Type, setting)
 	if err != nil {
@@ -172,11 +176,28 @@ func detectOneChannel(
 		return nil, err
 	}
 
+	return applyPicture(l, raw, img, meta, wallpaperSetter, layers)
+}
+
+// applyPicture crops, watermarks, writes and sets a downloaded picture, then
+// records it in the browsable history.
+//
+// Split out of detectOneChannel so that re-applying a history entry runs the
+// same steps rather than a second implementation that could drift: a re-applied
+// wallpaper must be cropped and watermarked exactly as the original was.
+func applyPicture(
+	l *logrus.Entry,
+	raw *bytes.Reader,
+	img image.Image,
+	meta *channel.PictureMeta,
+	wallpaperSetter setter.Setter,
+	layers []store.WatermarkLayer,
+) (*channel.PictureMeta, error) {
 	newImg := actor.DefaultCropper.Crop(img)
 
 	newImg, _ = watermark.Render(newImg, meta, layers)
 
-	wallpaperFileName := wallpaperPath + "." + meta.Format
+	wallpaperFileName := config.GetWallpaperFileName() + "." + meta.Format
 
 	out, err := os.Create(wallpaperFileName)
 	if err != nil {
@@ -214,5 +235,79 @@ func detectOneChannel(
 		return nil, err
 	}
 
+	// Recorded only after the wallpaper is actually on the desktop, so the
+	// history is a log of what was applied rather than of what was downloaded.
+	recordHistory(l, meta, img, wallpaperFileName)
+
 	return meta, err
+}
+
+// recordHistory appends the browsable history entry for a wallpaper that has
+// just been applied, writes its thumbnail, and enforces the entry cap.
+//
+// Every failure here is logged and swallowed. The wallpaper is already set,
+// which is the user's actual goal; losing a history row is a far smaller
+// problem than turning a successful refresh into a failed one.
+func recordHistory(
+	l *logrus.Entry, meta *channel.PictureMeta, img image.Image, wallpaperFileName string,
+) {
+	entry := store.WallpaperHistoryEntry{
+		ChannelName:  meta.ChannelKey,
+		ChannelType:  meta.Channel,
+		URL:          meta.URL,
+		Title:        meta.Title,
+		Caption:      meta.Caption,
+		Credit:       meta.Credit,
+		Format:       meta.Format,
+		DownloadTime: time.Now().Unix(),
+		FilePath:     wallpaperFileName,
+	}
+	if !meta.UploadTime.IsZero() {
+		entry.UploadTime = meta.UploadTime.Unix()
+	}
+
+	// The thumbnail is written before the row so the row can name it, and is
+	// named after the download time rather than the row id, which does not
+	// exist yet. A file whose row never materialises is reclaimed by the
+	// orphan sweep below.
+	if config.GetBool(config.KeyHistoryThumbnails) {
+		name := fmt.Sprintf("%s-%d.jpg", meta.ChannelKey, entry.DownloadTime)
+		path := filepath.Join(config.GetThumbnailDir(), name)
+		if written, err := actor.WriteThumbnail(img, path, config.DefaultThumbnailWidth); err != nil {
+			l.WithError(err).Warn("cannot write the history thumbnail")
+		} else {
+			entry.ThumbPath = written
+		}
+	}
+
+	if _, err := currentStore().AppendWallpaperHistory(entry); err != nil {
+		l.WithError(err).Warn("cannot record the wallpaper history")
+		return
+	}
+
+	sweepHistory(l)
+}
+
+// sweepHistory enforces the history entry cap and reclaims unreferenced
+// thumbnails. Cheap enough -- one indexed delete and one directory listing --
+// to run after every refresh rather than on a timer of its own.
+func sweepHistory(l *logrus.Entry) {
+	result, err := history.Sweep(currentStore(), history.SweepOptions{
+		KeepAtMost:   config.GetInt(config.KeyHistoryMaxEntries),
+		ThumbnailDir: config.GetThumbnailDir(),
+		// Turning thumbnails off is what removes the ones already written;
+		// there is no separate purge command to remember.
+		PurgeThumbnails: !config.GetBool(config.KeyHistoryThumbnails),
+	})
+	if err != nil {
+		l.WithError(err).Warn("cannot prune the wallpaper history")
+		return
+	}
+	if result.RowsRemoved > 0 || result.FilesRemoved > 0 {
+		l.WithFields(logrus.Fields{
+			"rows":  result.RowsRemoved,
+			"files": result.FilesRemoved,
+			"bytes": result.BytesReclaimed,
+		}).Debug("pruned the wallpaper history")
+	}
 }

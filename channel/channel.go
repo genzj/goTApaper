@@ -13,12 +13,21 @@ import (
 
 // PictureMeta contains title, format, time and other metadata of a picture
 type PictureMeta struct {
-	Title        string
-	Caption      string
-	Credit       string
-	Format       string
-	Channel      string
-	ChannelKey   string
+	Title   string
+	Caption string
+	Credit  string
+	Format  string
+	Channel string
+
+	ChannelKey string
+	// URL is where the picture was downloaded from.
+	//
+	// Each channel already resolves this to mark its download history, but
+	// kept it to itself. It is reported here so the browsable history can
+	// record it, which is what lets a past wallpaper be downloaded again and
+	// re-applied. Some providers serve time-limited URLs, so a stored URL is
+	// not guaranteed to still resolve.
+	URL          string
 	UploadTime   time.Time
 	DownloadTime time.Time
 }

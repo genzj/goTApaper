@@ -131,6 +131,7 @@ func (pexelsCuratedChannelProvider) Download(setting Settings) (*bytes.Reader, i
 		return nil, nil, meta, err
 	}
 
+	meta.URL = finalURL
 	h.Mark(finalURL)
 	_ = historyManager.Save(h)
 

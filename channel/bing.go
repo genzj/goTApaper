@@ -158,6 +158,7 @@ func (bingWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, i
 		return raw, nil, meta, err
 	}
 
+	meta.URL = finalURL
 	h.Mark(finalURL)
 	_ = historyManager.Save(h)
 
