@@ -33,9 +33,13 @@ func newTestServer(t *testing.T) (http.Handler, store.Store) {
 		config: service.NewConfig(s),
 		wallpaper: service.NewWallpaper(s, func([]string) (*channel.PictureMeta, error) {
 			return &channel.PictureMeta{ChannelKey: "bing", Title: "Test"}, nil
+		}, func(e store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
+			return &channel.PictureMeta{ChannelKey: e.ChannelName, Title: e.Title}, nil
 		}),
+		logs:   service.NewLogs(),
+		events: newEventHub(),
 	}
-	return h.routes(testToken), s
+	return h.routes(testToken, newTicketStore()), s
 }
 
 func do(t *testing.T, h http.Handler, method, path, body, token string) *httptest.ResponseRecorder {

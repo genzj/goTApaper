@@ -149,7 +149,7 @@ func startRealServer(t *testing.T) (*Server, string) {
 		Config: service.NewConfig(s),
 		Wallpaper: service.NewWallpaper(s, func([]string) (*channel.PictureMeta, error) {
 			return nil, nil
-		}),
+		}, nil),
 	})
 	if err != nil {
 		t.Fatalf("Start = %v", err)
