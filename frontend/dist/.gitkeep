@@ -1,0 +1,5 @@
+This file keeps frontend/dist present on a fresh checkout.
+
+frontend/assets.go embeds this directory, and //go:embed fails on a missing
+one -- which would stop the whole module compiling before anyone had a chance
+to run "make frontend". The built bundle itself is generated and ignored.
