@@ -290,6 +290,16 @@ func (s *Store) DeleteChannel(name string) error {
 			return err
 		}
 
+		// The browsable history goes too, for the same reason. Its thumbnail
+		// files are left to the orphan sweep rather than unlinked here: the
+		// store performs no filesystem side effects, and a file nothing
+		// references is exactly what that sweep reclaims.
+		if _, err := inner.q().Exec(
+			"DELETE FROM wallpaper_history WHERE channel_name = ?", name,
+		); err != nil {
+			return err
+		}
+
 		inner.emit("channels."+name, name, nil)
 		return nil
 	})

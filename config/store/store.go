@@ -164,6 +164,40 @@ type HistoryEntry struct {
 	FilePath     string `json:"filePath,omitempty"`
 }
 
+// WallpaperHistoryEntry is one applied wallpaper, as recorded in the
+// browsable history.
+//
+// It is distinct from HistoryEntry, which is the deduplication pointer: there
+// is one HistoryEntry per channel, overwritten on every download, and one
+// WallpaperHistoryEntry per picture ever applied.
+type WallpaperHistoryEntry struct {
+	ID int64 `json:"id"`
+	// ChannelName is the channel instance that supplied the picture, and
+	// ChannelType the implementation behind it. Both are stored, so a row
+	// stays readable after its channel is renamed or deleted.
+	ChannelName string `json:"channelName"`
+	ChannelType string `json:"channelType,omitempty"`
+	// URL is where the picture was downloaded from, kept so it can be
+	// re-downloaded and re-applied. A provider serving time-limited URLs may
+	// no longer honour it.
+	URL     string `json:"url,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Caption string `json:"caption,omitempty"`
+	Credit  string `json:"credit,omitempty"`
+	Format  string `json:"format,omitempty"`
+
+	UploadTime   int64 `json:"uploadTime,omitempty"`
+	DownloadTime int64 `json:"downloadTime"`
+
+	// FilePath is where the wallpaper was written. The same path recurs on
+	// every row, because the wallpaper file is overwritten on each refresh;
+	// only the newest row's file still holds the picture it describes.
+	FilePath string `json:"filePath,omitempty"`
+	// ThumbPath is a small copy of this particular picture, which is what
+	// makes an older entry previewable.
+	ThumbPath string `json:"thumbPath,omitempty"`
+}
+
 // Store is the persistent configuration backend.
 type Store interface {
 	// Settings
@@ -222,6 +256,38 @@ type Store interface {
 	Histories() ([]HistoryEntry, error)
 	// PutHistory inserts or overwrites the entry for a channel.
 	PutHistory(e HistoryEntry) error
+
+	// Wallpaper history
+
+	// AppendWallpaperHistory records one applied wallpaper and returns its id.
+	AppendWallpaperHistory(e WallpaperHistoryEntry) (int64, error)
+	// WallpaperHistory returns applied wallpapers newest first. A limit of
+	// zero or less returns every row.
+	WallpaperHistory(limit, offset int) ([]WallpaperHistoryEntry, error)
+	// WallpaperHistoryCount reports the total number of rows, so a client can
+	// page without walking them.
+	WallpaperHistoryCount() (int, error)
+	// WallpaperHistoryEntryByID returns one row, or ErrNotFound.
+	WallpaperHistoryEntryByID(id int64) (WallpaperHistoryEntry, error)
+	// PruneWallpaperHistory deletes the oldest rows beyond keepAtMost and
+	// returns the thumbnail path of every row it deleted. A keepAtMost of
+	// zero or less keeps everything.
+	//
+	// It returns paths rather than deleting the files itself so the store
+	// stays free of filesystem side effects: that is what lets it be tested
+	// against an in-memory database, and it lets the caller unlink only after
+	// the transaction has committed.
+	PruneWallpaperHistory(keepAtMost int) ([]string, error)
+	// WallpaperHistoryBeyond returns the thumbnail paths a prune to keepAtMost
+	// would delete, without deleting anything, so a dry run can report what it
+	// would do.
+	WallpaperHistoryBeyond(keepAtMost int) ([]string, error)
+	// ThumbnailPaths returns every thumbnail path still referenced, for
+	// reclaiming files that no row points at.
+	ThumbnailPaths() ([]string, error)
+	// DeleteWallpaperHistoryEntry removes one row, returning its thumbnail
+	// path.
+	DeleteWallpaperHistoryEntry(id int64) (string, error)
 
 	// Lifecycle
 
