@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
@@ -18,6 +20,8 @@ import (
 type handlers struct {
 	config    *service.Config
 	wallpaper *service.Wallpaper
+	logs      *service.Logs
+	events    *eventHub
 }
 
 // errorBody is the single error shape every failing route returns. It is
@@ -341,13 +345,214 @@ func (h *handlers) deleteWatermarkLayer(w http.ResponseWriter, r *http.Request) 
 
 // wallpaper
 
-func (h *handlers) listHistory(w http.ResponseWriter, r *http.Request) {
+// listLatestPerChannel serves the deduplication pointer: one row per channel,
+// overwritten on every download. Distinct from the browsable history below,
+// which is a log.
+func (h *handlers) listLatestPerChannel(w http.ResponseWriter, r *http.Request) {
 	entries, err := h.wallpaper.History()
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, entries)
+}
+
+func (h *handlers) listWallpaperHistory(w http.ResponseWriter, r *http.Request) {
+	page, err := h.wallpaper.WallpaperHistory(
+		intQuery(r, "limit", 0), intQuery(r, "offset", 0),
+	)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *handlers) getWallpaperHistoryEntry(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	entry, err := h.wallpaper.WallpaperHistoryEntry(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entry)
+}
+
+func (h *handlers) deleteWallpaperHistoryEntry(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.wallpaper.DeleteWallpaperHistoryEntry(id); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+func (h *handlers) historyThumbnail(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	file, err := h.wallpaper.Thumbnail(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	defer file.Close()
+
+	// Thumbnails are immutable once written -- a new wallpaper gets a new
+	// entry and a new file -- so they are safe to cache hard, which keeps a
+	// scrolling history list from re-fetching every image.
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	serveFile(w, r, file, "image/jpeg")
+}
+
+func (h *handlers) reapplyHistoryEntry(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+
+	h.events.Publish(Event{Type: EventRefreshStarted})
+	result, err := h.wallpaper.Reapply(id)
+	h.events.Publish(Event{Type: EventRefreshFinished, Data: result})
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *handlers) pruneHistory(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		// KeepAtMost of zero means "use the configured cap".
+		KeepAtMost int  `json:"keepAtMost"`
+		DryRun     bool `json:"dryRun"`
+	}
+	if r.ContentLength > 0 && !decodeBody(w, r, &body) {
+		return
+	}
+
+	result, err := h.wallpaper.PruneHistory(body.KeepAtMost, body.DryRun)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *handlers) currentWallpaper(w http.ResponseWriter, r *http.Request) {
+	current, err := h.wallpaper.Current()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, current)
+}
+
+func (h *handlers) currentWallpaperImage(w http.ResponseWriter, r *http.Request) {
+	file, contentType, err := h.wallpaper.CurrentImage()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	defer file.Close()
+
+	// Deliberately not cached: this path keeps serving a different picture as
+	// refreshes replace the file underneath it.
+	w.Header().Set("Cache-Control", "no-store")
+	serveFile(w, r, file, contentType)
+}
+
+// logs
+
+func (h *handlers) readLogs(w http.ResponseWriter, r *http.Request) {
+	var since uint64
+	if raw := r.URL.Query().Get("since"); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid since %q", raw))
+			return
+		}
+		since = parsed
+	}
+
+	writeJSON(w, http.StatusOK, h.logs.Read(
+		r.URL.Query().Get("level"), since, intQuery(r, "limit", 0),
+	))
+}
+
+func (h *handlers) listLogFiles(w http.ResponseWriter, r *http.Request) {
+	files, err := h.logs.Files()
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, files)
+}
+
+func (h *handlers) downloadLogFile(w http.ResponseWriter, r *http.Request) {
+	file, err := h.logs.OpenFile(r.PathValue("name"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	defer file.Close()
+
+	w.Header().Set("Cache-Control", "no-store")
+	serveFile(w, r, file, "application/x-ndjson")
+}
+
+// pathID parses an {id} path segment, answering the request itself on failure.
+func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	raw := r.PathValue("id")
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid id %q", raw))
+		return 0, false
+	}
+	return id, true
+}
+
+// intQuery reads an integer query parameter, falling back to def when it is
+// absent or unparseable.
+//
+// Unparseable is tolerated rather than rejected because these are display
+// hints -- a page size, an offset -- and a client sending "?limit=abc" is
+// better served a default page than an error it cannot act on. The id in a
+// path is validated strictly above, because there the value *is* the request.
+func intQuery(r *http.Request, name string, def int) int {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return def
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return parsed
+}
+
+// serveFile streams an open file, using http.ServeContent so range requests
+// and conditional gets work without this package implementing either.
+func serveFile(w http.ResponseWriter, r *http.Request, file *os.File, contentType string) {
+	w.Header().Set("Content-Type", contentType)
+
+	info, err := file.Stat()
+	if err != nil {
+		// No size and no modification time: fall back to a plain copy, which
+		// loses range support but still delivers the bytes.
+		if _, err := io.Copy(w, file); err != nil {
+			logrus.WithError(err).Debug("cannot write the file response")
+		}
+		return
+	}
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }
 
 func (h *handlers) refresh(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +565,10 @@ func (h *handlers) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bracketed so a UI that did not start this refresh still sees it happen.
+	h.events.Publish(Event{Type: EventRefreshStarted})
 	result, err := h.wallpaper.RefreshNow(body.Channels)
+	h.events.Publish(Event{Type: EventRefreshFinished, Data: result})
 	if err != nil {
 		writeStoreError(w, err)
 		return

@@ -33,6 +33,12 @@ type Server struct {
 	listener net.Listener
 	appDir   string
 	token    string
+	// handlers is retained so the embedding application can reach the event
+	// hub to publish, and mint a browser session ticket, without going through
+	// a socket to talk to itself.
+	handlers *handlers
+	// tickets issues the single-use tickets that hand a browser its session.
+	tickets *ticketStore
 }
 
 // Options configures a Server.
@@ -41,9 +47,10 @@ type Options struct {
 	AppDir string
 	// Port to listen on; zero picks an ephemeral one.
 	Port int
-	// Config and Wallpaper are the services to expose.
+	// Config, Wallpaper and Logs are the services to expose.
 	Config    *service.Config
 	Wallpaper *service.Wallpaper
+	Logs      *service.Logs
 }
 
 // Start begins serving in the background.
@@ -59,16 +66,31 @@ func Start(opts Options) (*Server, error) {
 		return nil, fmt.Errorf("cannot listen on %s: %w", addr, err)
 	}
 
-	h := &handlers{config: opts.Config, wallpaper: opts.Wallpaper}
+	logs := opts.Logs
+	if logs == nil {
+		// The log service holds no state of its own -- it reads the
+		// process-wide hook -- so a caller that did not ask for one still gets
+		// working log routes rather than a nil dereference.
+		logs = service.NewLogs()
+	}
+	h := &handlers{
+		config:    opts.Config,
+		wallpaper: opts.Wallpaper,
+		logs:      logs,
+		events:    newEventHub(),
+	}
 
+	tickets := newTicketStore()
 	srv := &Server{
 		http: &http.Server{
-			Handler:           h.routes(token),
+			Handler:           h.routes(token, tickets),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		listener: listener,
 		appDir:   opts.AppDir,
 		token:    token,
+		handlers: h,
+		tickets:  tickets,
 	}
 
 	if err := srv.writeEndpointFile(); err != nil {
@@ -112,12 +134,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // routes builds the mux. Every route except the health check sits behind the
 // token check.
-func (h *handlers) routes(token string) http.Handler {
+func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	mux := http.NewServeMux()
 
 	// Unauthenticated: a liveness probe reveals nothing and is useful to a
 	// client deciding whether to start a daemon.
 	mux.HandleFunc("GET "+wire.BasePath+"/healthz", h.health)
+
+	// Also unauthenticated, because it is how a browser *acquires* its
+	// credential. It is not a hole: the ticket it demands is a single-use
+	// 60-second secret this process minted itself, and the handler refuses
+	// anything else. See session.go.
+	mux.Handle("GET "+uiSessionPath, &sessionHandler{tickets: tickets, token: token})
 
 	authed := http.NewServeMux()
 	r := &router{mux: authed, allowed: map[string][]string{}}
@@ -148,8 +176,29 @@ func (h *handlers) routes(token string) http.Handler {
 	r.handle("PUT", "/watermark-layers/{id}", h.upsertWatermarkLayer)
 	r.handle("DELETE", "/watermark-layers/{id}", h.deleteWatermarkLayer)
 
-	r.handle("GET", "/history", h.listHistory)
+	// The deduplication pointer, one row per channel, kept at its own path now
+	// that /history serves the browsable log.
+	r.handle("GET", "/history/latest-per-channel", h.listLatestPerChannel)
+	r.handle("GET", "/history", h.listWallpaperHistory)
+	r.handle("POST", "/history/prune", h.pruneHistory)
+	r.handle("GET", "/history/{id}", h.getWallpaperHistoryEntry)
+	r.handle("DELETE", "/history/{id}", h.deleteWallpaperHistoryEntry)
+	r.handle("GET", "/history/{id}/thumbnail", h.historyThumbnail)
+	r.handle("POST", "/history/{id}/reapply", h.reapplyHistoryEntry)
+
+	r.handle("GET", "/wallpaper/current", h.currentWallpaper)
+	r.handle("GET", "/wallpaper/current/image", h.currentWallpaperImage)
 	r.handle("POST", "/refresh", h.refresh)
+
+	r.handle("GET", "/logs", h.readLogs)
+	r.handle("GET", "/logs/files", h.listLogFiles)
+	r.handle("GET", "/logs/files/{name}", h.downloadLogFile)
+
+	// One stream carrying log lines, configuration changes and refresh
+	// progress. A single endpoint because it works unchanged in the webview,
+	// in a browser and under curl, which is what keeps the UI from needing a
+	// transport the CLI does not have.
+	r.handle("GET", "/events", h.streamEvents)
 
 	// Catch-alls, so an unrouted path or an unsupported method produces the
 	// same JSON error shape as everything else. Go's ServeMux would otherwise
@@ -158,10 +207,20 @@ func (h *handlers) routes(token string) http.Handler {
 	// These also shadow the mux's own 405 handling -- a pattern that matches
 	// the path but not the method no longer matches at all once a prefix
 	// pattern exists -- so the router reconstructs the distinction itself.
+	// The frontend. Inside the authenticated mux, so the interface is no more
+	// reachable than the API it drives; a browser authenticates with the
+	// session cookie the handshake above set.
+	authed.Handle("GET "+uiPath, &uiHandler{assets: uiAssets})
+	// Bare "/ui" redirects, or the relative asset paths in index.html would
+	// resolve against "/" and 404.
+	authed.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, uiPath, http.StatusMovedPermanently)
+	})
+
 	authed.HandleFunc("/", r.unmatched)
 	authed.HandleFunc(wire.BasePath+"/", r.unmatched)
 
-	mux.Handle("/", requireToken(token, authed))
+	mux.Handle("/", requireToken(token, requireLoopbackOrigin(authed)))
 
 	// Recovery is outermost so a panic in any handler, or in the auth
 	// middleware, still yields a JSON response instead of a dropped
@@ -170,10 +229,13 @@ func (h *handlers) routes(token string) http.Handler {
 }
 
 // logRequests records each request at debug level. Authorization headers are
-// never logged.
+// never logged, and a session ticket in the query string is redacted: the log
+// now goes to a file, so a credential written here would outlive the request.
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logrus.WithField("method", r.Method).WithField("path", r.URL.Path).Debug("API request")
+		logrus.WithField("method", r.Method).WithField(
+			"path", trimTicket(r.URL.RequestURI()),
+		).Debug("API request")
 		next.ServeHTTP(w, r)
 	})
 }
