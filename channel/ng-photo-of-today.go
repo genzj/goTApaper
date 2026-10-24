@@ -189,6 +189,7 @@ func (ngPoTChannelProvider) Download(setting Settings) (*bytes.Reader, image.Ima
 		return raw, nil, meta, err
 	}
 
+	meta.URL = finalURL
 	h.Mark(finalURL)
 	if err := historyManager.Save(h); err != nil {
 		logrus.Warnf("save history error: %v", err)

@@ -8,11 +8,13 @@ import (
 
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
+
+	"github.com/genzj/goTApaper/logging"
 )
 
 // InitLogger configures the logger from the current settings. It is exported
 // so that callers can re-apply it once configuration is loaded, and again
-// whenever the debug flag changes.
+// whenever the logging settings change.
 func InitLogger() {
 	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 
@@ -21,6 +23,31 @@ func InitLogger() {
 		logrus.Debugln("Debug log enabled")
 	} else {
 		logrus.SetLevel(logrus.InfoLevel)
+	}
+
+	installLogSinks()
+}
+
+// installLogSinks attaches the in-memory ring and the rotating file.
+//
+// It is skipped until the application directory is known, because resolving
+// the log path calls AppDir, which panics before SetAppName has run. A unit
+// test that only reads a setting therefore gets stderr logging and nothing
+// else, which is what it wants.
+func installLogSinks() {
+	if appName == "" {
+		return
+	}
+
+	if err := logging.Install(GetInt(KeyLogRingSize), logging.RotateOptions{
+		Path:       GetLogFileName(),
+		MaxSizeMB:  GetInt(KeyLogMaxSizeMB),
+		MaxBackups: GetInt(KeyLogMaxBackups),
+	}); err != nil {
+		// Logged, not fatal: goTApaper's job is to set wallpapers, and it
+		// should keep doing that when it cannot open a log file. stderr and
+		// the in-memory ring still work.
+		logrus.WithError(err).Error("cannot open the log file, continuing without it")
 	}
 }
 

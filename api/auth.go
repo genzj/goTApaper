@@ -89,9 +89,15 @@ func readToken(path string) (string, error) {
 }
 
 // requireToken wraps a handler with bearer token authentication.
+//
+// A browser cannot set an Authorization header on a top-level navigation, so
+// the session cookie is accepted as an equivalent credential. It carries the
+// same token and is set only by the ticket handshake in session.go, which
+// means this is one credential reachable two ways rather than two
+// authentication schemes.
 func requireToken(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		presented, ok := bearerToken(r)
+		presented, ok := credential(r)
 		// Constant time, so a wrong token cannot be narrowed down by timing
 		// the response.
 		if !ok || subtle.ConstantTimeCompare([]byte(presented), []byte(token)) != 1 {
@@ -121,6 +127,22 @@ func describeCredential(presented bool) string {
 		return "incorrect"
 	}
 	return "missing"
+}
+
+// credential returns the token the request presented, from the Authorization
+// header or, failing that, the session cookie.
+//
+// The header is preferred so a stale cookie cannot shadow an explicit
+// credential from the CLI or curl.
+func credential(r *http.Request) (string, bool) {
+	if token, ok := bearerToken(r); ok {
+		return token, true
+	}
+	cookie, err := r.Cookie(SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return "", false
+	}
+	return cookie.Value, true
 }
 
 func bearerToken(r *http.Request) (string, bool) {

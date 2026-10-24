@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,10 @@ import (
 // requestTimeout bounds a call to the daemon. Generous enough for a refresh to
 // be queued, short enough that a wedged daemon does not hang the CLI.
 const requestTimeout = 10 * time.Second
+
+// downloadTimeout bounds a call that fetches a picture from a provider before
+// it can answer, which no ten-second deadline will cover on a slow link.
+const downloadTimeout = 2 * time.Minute
 
 // Client issues requests to a running daemon.
 //
@@ -139,9 +145,108 @@ func (c *Client) UnsetSetting(key string) error {
 	return c.Do(http.MethodDelete, "/settings/"+key, nil, nil)
 }
 
-// TODO: wrap the remaining endpoints (channels, channel templates, watermark
-// layers, history, refresh) so every mutating CLI command routes through a
-// running daemon rather than only the settings ones. Do returns typed errors
-// and decodes arbitrary payloads already, so each is a thin method; the
-// commands that still write directly are correct today but do not give the
-// daemon its immediate-reaction signal.
+// Wallpaper and history.
+
+// Refresh asks the daemon to download and apply a wallpaper now. An empty
+// channel list uses the configured rotation.
+func (c *Client) Refresh(channels []string, out any) error {
+	return c.Do(http.MethodPost, "/refresh",
+		map[string][]string{"channels": channels}, out)
+}
+
+// WallpaperHistory reads one page of the browsable history.
+func (c *Client) WallpaperHistory(limit, offset int, out any) error {
+	return c.Do(http.MethodGet,
+		fmt.Sprintf("/history?limit=%d&offset=%d", limit, offset), nil, out)
+}
+
+// WallpaperHistoryEntry reads one history entry.
+func (c *Client) WallpaperHistoryEntry(id int64, out any) error {
+	return c.Do(http.MethodGet, fmt.Sprintf("/history/%d", id), nil, out)
+}
+
+// DeleteWallpaperHistoryEntry removes one history entry and its thumbnail.
+func (c *Client) DeleteWallpaperHistoryEntry(id int64) error {
+	return c.Do(http.MethodDelete, fmt.Sprintf("/history/%d", id), nil, nil)
+}
+
+// Reapply downloads a recorded wallpaper again and sets it.
+//
+// This one needs a longer deadline than the shared timeout allows: it makes an
+// outbound HTTP request to the original provider before it can answer.
+func (c *Client) Reapply(id int64, out any) error {
+	return c.withTimeout(downloadTimeout).Do(
+		http.MethodPost, fmt.Sprintf("/history/%d/reapply", id), nil, out,
+	)
+}
+
+// PruneHistory enforces the history cap through the daemon. A keepAtMost of
+// zero means "use the configured cap".
+func (c *Client) PruneHistory(keepAtMost int, dryRun bool, out any) error {
+	return c.Do(http.MethodPost, "/history/prune", map[string]any{
+		"keepAtMost": keepAtMost,
+		"dryRun":     dryRun,
+	}, out)
+}
+
+// CurrentWallpaper reads what is on the desktop now.
+func (c *Client) CurrentWallpaper(out any) error {
+	return c.Do(http.MethodGet, "/wallpaper/current", nil, out)
+}
+
+// Logs.
+
+// Logs reads buffered log entries.
+func (c *Client) Logs(level string, since uint64, limit int, out any) error {
+	query := url.Values{}
+	if level != "" {
+		query.Set("level", level)
+	}
+	if since > 0 {
+		query.Set("since", strconv.FormatUint(since, 10))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	return c.Do(http.MethodGet, "/logs?"+query.Encode(), nil, out)
+}
+
+// LogFiles lists the log files on disk.
+func (c *Client) LogFiles(out any) error {
+	return c.Do(http.MethodGet, "/logs/files", nil, out)
+}
+
+// Events opens the server-sent event stream.
+//
+// It returns the response body for the caller to read and close. No timeout is
+// applied: the whole point of the stream is to stay open, and the shared
+// client's deadline would cut it off mid-tail.
+func (c *Client) Events() (io.ReadCloser, error) {
+	req, err := http.NewRequest(http.MethodGet, c.base+wire.BasePath+"/events", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := (&http.Client{}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		payload, _ := io.ReadAll(resp.Body)
+		return nil, decodeError(http.MethodGet, "/events", resp.Status, payload)
+	}
+	return resp.Body, nil
+}
+
+// withTimeout returns a shallow copy of the client using a different deadline,
+// so one slow call does not require relaxing it for every other.
+func (c *Client) withTimeout(timeout time.Duration) *Client {
+	return &Client{
+		base:  c.base,
+		token: c.token,
+		http:  &http.Client{Timeout: timeout},
+	}
+}

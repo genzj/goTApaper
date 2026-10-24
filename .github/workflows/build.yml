@@ -23,9 +23,18 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+
     - name: Install tools
       run: |
         go install github.com/mitchellh/gox@latest
+
+    - name: Build the web interface
+      run: make frontend-deps frontend
 
     - name: Build
       env:
@@ -70,7 +79,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update -y
-        sudo apt-get install -y git build-essential libgtk-3-dev libayatana-appindicator3-dev
+        sudo apt-get install -y git build-essential libgtk-4-dev libwebkitgtk-6.0-dev
 
     - uses: actions/checkout@v4
       with:
@@ -88,9 +97,18 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+
     - name: Install tools
       run: |
         go install github.com/mitchellh/gox@latest
+
+    - name: Build the web interface
+      run: make frontend-deps frontend
 
     - name: Build
       env:
@@ -129,10 +147,19 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-go-
 
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+
     - name: Install tools
       run: |
         go install github.com/mitchellh/gox@latest
         brew install create-dmg
+
+    - name: Build the web interface
+      run: make frontend-deps frontend
 
     - name: Build amd64
       env:

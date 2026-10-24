@@ -1,6 +1,9 @@
 [tools]
-go = "1.24"
+# Wails v3 requires Go 1.26, which is why this moved up from 1.24. CI reads the
+# version from go.mod rather than from here, so the two stay in step.
+go = "1.26"
+node = "20"
 "go:github.com/mitchellh/gox" = "latest"
 
 [env]
-GOPROXY="direct"
+GOPROXY = "direct"
