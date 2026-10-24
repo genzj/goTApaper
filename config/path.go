@@ -9,11 +9,18 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 )
 
+// Deprecated: the pre-database spellings of two setting keys.
+//
+// They are kept only because they are exported, and are now aliases for the
+// current keys. Reading a setting by these names looked up a key that is no
+// longer in the schema, so GetString returned "" and the user's configured
+// wallpaper path was silently ignored in favour of the default. Use
+// KeyWallpaperFileName and KeyHistoryFile.
 const (
 	// WallpaperFileSettingName in config file
-	WallpaperFileSettingName = "wallpaper-file-name"
+	WallpaperFileSettingName = KeyWallpaperFileName
 	// HistoryFileSettingName in config file
-	HistoryFileSettingName = "history-file"
+	HistoryFileSettingName = KeyHistoryFile
 )
 
 func loadAppFileName(configKey, defaultValue string) string {
@@ -27,12 +34,25 @@ func loadAppFileName(configKey, defaultValue string) string {
 
 // GetWallpaperFileName return a proper path for wallpaper picture
 func GetWallpaperFileName() string {
-	return loadAppFileName(WallpaperFileSettingName, DefaultWallpaperFileName)
+	return loadAppFileName(KeyWallpaperFileName, DefaultWallpaperFileName)
 }
 
 // GetHistoryFileName return a proper path for history storage
 func GetHistoryFileName() string {
-	return loadAppFileName(HistoryFileSettingName, DefaultHistoryFileName)
+	return loadAppFileName(KeyHistoryFile, DefaultHistoryFileName)
+}
+
+// GetLogFileName returns the path of the rotating log file.
+func GetLogFileName() string {
+	return loadAppFileName(KeyLogFile, DefaultLogFileName)
+}
+
+// GetThumbnailDir returns the directory holding wallpaper history thumbnails.
+// It is not configurable: the thumbnails are an implementation detail of the
+// history table, and a user who moves them would only strand the paths already
+// recorded in it.
+func GetThumbnailDir() string {
+	return path.Join(AppDir(), DefaultThumbnailDirName)
 }
 
 // MustExpand expands file paths with '~' or aborts whole app at failure

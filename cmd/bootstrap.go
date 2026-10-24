@@ -39,6 +39,13 @@ func loadConfig() {
 	}
 	config.EnsureAppDir()
 
+	// Applied once here with the schema defaults, so that a message logged
+	// while opening or migrating the database reaches the log file and the
+	// in-memory ring rather than only stderr. It is applied again at the end
+	// of this function, once the stored settings and any --debug override are
+	// known.
+	config.InitLogger()
+
 	dbPath := config.DBFileName()
 	fresh := !fileExists(dbPath)
 
@@ -69,11 +76,11 @@ func loadConfig() {
 
 	applyFlagOverrides()
 
-	// Applied twice overall: once with defaults so early messages are routed,
-	// and again here now that the stored debug flag and any --debug override
-	// are known.
 	config.InitLogger()
-	config.Observe(config.KeyLogDebug, func(string, any, any) {
+	// Any logging setting changing re-applies the whole logger, so a new ring
+	// size or file limit takes effect without a restart. A glob rather than
+	// one observer per key: they all funnel into the same call.
+	config.Observe("log.*", func(string, any, any) {
 		config.InitLogger()
 	})
 }
