@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/genzj/goTApaper/logging"
 )
 
 // SettingsSchemaVersion is the version of the *content* model: the set of
@@ -100,6 +102,11 @@ const (
 	KeyLogDebug          = "log.debug"
 	KeyLogDebugRendering = "log.debug-rendering"
 
+	KeyLogFile       = "log.file"
+	KeyLogMaxSizeMB  = "log.max-size-mb"
+	KeyLogMaxBackups = "log.max-backups"
+	KeyLogRingSize   = "log.ring-size"
+
 	KeyNetworkProxy = "network.proxy"
 
 	KeyPictureCrop            = "picture.crop"
@@ -113,7 +120,9 @@ const (
 
 	KeyDaemonInterval = "daemon.interval"
 
-	KeyHistoryFile = "history.file"
+	KeyHistoryFile       = "history.file"
+	KeyHistoryMaxEntries = "history.max-entries"
+	KeyHistoryThumbnails = "history.thumbnails"
 
 	KeyAPIPort = "api.port"
 )
@@ -161,6 +170,32 @@ func buildDefinitions() []Definition {
 			Label:       "Watermark rendering debug",
 			Description: "enable debug mode in watermark rendering",
 			LegacyKeys:  []string{"debug-rendering"},
+		},
+		{
+			Key: KeyLogFile, Kind: KindString, Default: "",
+			Label: "Log file",
+			Description: "path of the rotating log file; empty uses " +
+				DefaultLogFileName + " in the application directory",
+		},
+		{
+			Key: KeyLogMaxSizeMB, Kind: KindInt,
+			Default:     strconv.Itoa(logging.DefaultMaxSizeMB),
+			Label:       "Log file size limit",
+			Description: "megabytes a log file may reach before it is rotated",
+		},
+		{
+			Key: KeyLogMaxBackups, Kind: KindInt,
+			Default: strconv.Itoa(logging.DefaultMaxBackups),
+			Label:   "Rotated logs kept",
+			Description: "number of rotated log files to keep; with the size limit " +
+				"this is the whole disk budget for logs",
+		},
+		{
+			Key: KeyLogRingSize, Kind: KindInt,
+			Default: strconv.Itoa(logging.DefaultRingSize),
+			Label:   "Log entries kept in memory",
+			Description: "recent entries held for reading and live tailing; " +
+				"bounds memory use, as the file limits bound disk use",
 		},
 		{
 			Key: KeyNetworkProxy, Kind: KindString, Default: "direct",
@@ -217,6 +252,19 @@ func buildDefinitions() []Definition {
 			Label:       "Legacy history file",
 			Description: "path to the legacy history file; unused once history lives in the database",
 			LegacyKeys:  []string{"history-file"},
+		},
+		{
+			Key: KeyHistoryMaxEntries, Kind: KindInt,
+			Default: strconv.Itoa(DefaultHistoryMaxEntries),
+			Label:   "Wallpapers remembered",
+			Description: "how many past wallpapers to keep in the browsable history; " +
+				"older entries and their thumbnails are removed. 0 keeps everything",
+		},
+		{
+			Key: KeyHistoryThumbnails, Kind: KindBool, Default: "true",
+			Label: "Keep thumbnails",
+			Description: "save a small copy of each wallpaper so the history can be " +
+				"previewed; turning this off removes the existing thumbnails",
 		},
 		{
 			Key: KeyAPIPort, Kind: KindInt, Default: "0",
