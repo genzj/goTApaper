@@ -1,4 +1,4 @@
-.PHONY: build build-all build-windows-console clean test help default example generate
+.PHONY: build build-all build-windows-console clean test help default example generate frontend frontend-deps
 
 UNAME := $(shell uname)
 
@@ -37,6 +37,7 @@ help:
 	@echo
 	@echo 'Usage:'
 	@echo '    make build           Compile the project.'
+	@echo '    make frontend        Build the web interface into frontend/dist'
 	@echo '    make examples        Copy example files to target directory'
 	@echo '    make i18n            Copy translation files to i18n subdirectory under the target directory'
 	@echo '    make test            Run tests on a compiled project.'
@@ -45,8 +46,27 @@ help:
 
 build: build-os-linux-amd64 build-os-linux-i386
 
-build-os-%: $(TARGET_DIR) generate $(GO_SOURCES)
+build-os-%: $(TARGET_DIR) generate frontend $(GO_SOURCES)
 	make go-$@ example i18n
+
+FRONTEND_DIR := frontend
+FRONTEND_DIST := $(FRONTEND_DIR)/dist/index.html
+FRONTEND_SOURCES := $(shell find $(FRONTEND_DIR)/src -type f 2>/dev/null) \
+	$(FRONTEND_DIR)/package.json $(FRONTEND_DIR)/index.html \
+	$(FRONTEND_DIR)/vite.config.ts
+
+# The built interface, embedded into the binary by frontend/assets.go. It is a
+# build prerequisite rather than a separate step because //go:embed needs the
+# directory to hold the real bundle, not just the committed placeholder.
+frontend: $(FRONTEND_DIST)
+
+$(FRONTEND_DIST): $(FRONTEND_SOURCES)
+	cd $(FRONTEND_DIR) && { test -d node_modules || npm install ; } && npm run build
+
+# npm ci for a reproducible install, used by CI where the lockfile is
+# authoritative.
+frontend-deps:
+	cd $(FRONTEND_DIR) && npm ci
 
 $(TARGET_DIR):
 	@test -e $(TARGET_DIR) || mkdir -p $(TARGET_DIR)
@@ -108,6 +128,9 @@ go-build-os-darwin-arm64:
 
 clean:
 	-rm -rf $(TARGET_DIR) data/example_vfsdata.go
+	# The placeholder stays: frontend/assets.go embeds this directory, and
+	# //go:embed fails on a missing one.
+	-find $(FRONTEND_DIR)/dist -mindepth 1 ! -name .gitkeep -delete
 
 test:
 	go test ./...

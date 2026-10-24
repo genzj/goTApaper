@@ -133,3 +133,9 @@ Temporary Items
 /test.yml
 # Claude Code local settings (machine-specific, not shared)
 .claude/settings.local.json
+
+# Built web interface. dist/ itself is kept, because frontend/assets.go
+# embeds it and //go:embed fails on a missing directory.
+/frontend/node_modules/
+/frontend/dist/*
+!/frontend/dist/.gitkeep

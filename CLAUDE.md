@@ -8,7 +8,7 @@ goTApaper is a cross-platform (Windows/macOS/Linux) desktop wallpaper manager wr
 
 ## Common Commands
 
-Toolchain is pinned via `mise.toml` (Go 1.24, `gox` for cross-compilation). `GOPROXY=direct` is set there — the project resolves modules directly from source hosts rather than a proxy.
+Toolchain is pinned via `mise.toml` (Go 1.26 — required by Wails v3 — Node 20, `gox` for cross-compilation). `GOPROXY=direct` is set there — the project resolves modules directly from source hosts rather than a proxy.
 
 ```bash
 # Run all tests
@@ -21,6 +21,12 @@ go test ./actor -run TestCrop
 # Code generation (MUST run before building — embeds examples/ into data/)
 make generate          # runs `go generate` in generate/, producing data/example_vfsdata.go
 
+# Web interface (MUST run before building — frontend/assets.go embeds frontend/dist)
+make frontend          # npm install + vite build
+make frontend-deps     # npm ci, for a reproducible install
+cd frontend && npm run dev   # Vite dev server; set GOTAPAPER_API to the address
+                             # in <app-dir>/api-endpoint so /api proxies to the daemon
+
 # Build for a target platform (runs generate + example + i18n as prerequisites)
 make build-os-linux-amd64
 make build-os-darwin-arm64   # Apple Silicon
@@ -29,7 +35,11 @@ make build-os-windows        # GUI + console variants
 
 # Run directly during development (no cross-compile)
 go run . refresh --debug     # download + set wallpaper once
-go run . daemon --debug      # run tray daemon
+go run . daemon --debug      # tray icon, window and localhost API
+go run . daemon --headless --debug   # no tray, no window; for a server or a container
+go run . logs -f             # tail the running daemon's log over the event stream
+go run . history list        # browse the wallpapers that have been applied
+go run . wallpaper current   # what is on the desktop now
 go run . config list                 # show every setting, its type and accepted values
 go run . config example              # print the documented example configuration
 go run . config export               # dump current config as YAML (anchors preserved)
@@ -38,7 +48,9 @@ go run . --app-dir /tmp/profile ...   # run against a throwaway config dir
 make clean             # removes bin/ and the generated data/example_vfsdata.go
 ```
 
-Native builds use CGO (`gox -cgo`) because the system tray and setters link against OS libraries. On Linux this requires `build-essential libgtk-3-dev libayatana-appindicator3-dev`.
+Native builds use CGO (`gox -cgo`) because the tray, the webview and the setters link against OS libraries. On Linux this requires `build-essential libgtk-4-dev libwebkitgtk-6.0-dev` — Wails v3 defaults to GTK4 and webkitgtk-6.0. A `gtk3` build tag exists upstream (`gtk+-3.0 webkit2gtk-4.1`) for older distributions, but the GTK4 default is what CI builds. Windows needs the WebView2 runtime at *run* time, not at build time.
+
+CI already builds natively on each OS (`windows-latest`, `ubuntu-24.04`, `macos-latest`), so `gox` acts as an output-naming wrapper rather than a cross-compiler. The 32-bit Linux target is commented out and should stay that way: a 32-bit GTK4 toolchain is not worth standing up. `daemon --headless` is the supported way to run on a machine with no desktop session.
 
 ## Architecture
 
@@ -65,16 +77,41 @@ Both wallpaper sources and OS setters use a shared registry pattern (`util/regis
 
 ### History (deduplication)
 
-`history/` defines the `Manager` interface; `config/store.HistoryManager` implements it over the database (the adapter lives on the store side to keep the dependency acyclic). One row per channel, as the old `history.json` map was. Channels call `history.Default.Load(name)` / `h.Has(url)` / `h.Mark(url)` to skip re-downloading; `--force` bypasses the check. Note channels key history by their *type* constant, not the instance name, so two instances of one type share an entry.
+`history/` defines the `Manager` interface; `config/store.HistoryManager` implements it over the database (the adapter lives on the store side to keep the dependency acyclic). One row per channel in `download_history`, as the old `history.json` map was. Channels call `history.Default.Load(name)` / `h.Has(url)` / `h.Mark(url)` to skip re-downloading; `--force` bypasses the check. Note channels key history by their *type* constant, not the instance name, so two instances of one type share an entry.
+
+### Browsable history (`wallpaper_history`)
+
+A **second, append-only** table (migration `0002`), one row per wallpaper actually applied, written by `recordHistory` in `cmd/refresh.go` *after* the setter succeeds. It is deliberately not a widening of `download_history`: merging them would change deduplication from "same as last time?" to "ever seen?", which is a different product decision.
+
+- Each row keeps the source `url`, so `history reapply` / `POST /history/{id}/reapply` can download it again (`cmd/reapply.go`) and run it through the same `applyPicture` as a fresh download. Some providers expire links; that failure is expected and reported.
+- A 480px JPEG thumbnail per row under `<app-dir>/thumbs` is what makes an older entry previewable — `wallpaper.file-name` is overwritten every refresh, so only the newest row's file still holds its picture.
+- **One retention knob: `history.max-entries`.** No age limit. A thumbnail has no lifetime of its own; it belongs to its row. `history.Sweep` deletes rows over the cap, unlinks their files *after* the transaction commits, then reclaims any thumbnail no row references whose mtime is older than `OrphanGrace` (1h). That grace window matters — a thumbnail is written moments before its row — and the orphan pass is what self-corrects after a crash, a deleted channel or `history.thumbnails` being turned off. Runs at daemon start and after each refresh.
+- `--dry-run` reads `WallpaperHistoryBeyond` rather than rolling back a delete, so the preview never takes a write path.
 
 ### Localhost REST API
 
-`service/` holds the application operations as plain Go methods on JSON-tagged types, deliberately free of HTTP so a future GUI can bind them directly. `api/` is a thin `net/http` adapter started by the daemon (`--api`, on by default).
+`service/` holds the application operations as plain Go methods on JSON-tagged types, deliberately free of HTTP. `api/` is a thin `net/http` adapter started by the daemon (`--api`, on by default). **The desktop interface also goes through this API rather than binding Go methods** — that is what makes "everything in the UI is doable from the CLI or curl" structural rather than a convention someone has to remember.
 
 - **Binds `127.0.0.1` only** (`api.LoopbackHost`) and requires a bearer token from `<app-dir>/api-token` (mode 0600), compared in constant time. Never make the bind address configurable: the API rewrites configuration and holds the user's provider API keys.
 - Secrets are redacted to `service.Redacted` on read; writing that sentinel back is a no-op, so a form can round-trip a channel without ever being told its API key.
 - `GET /api/v1/setting-definitions` and `GET /api/v1/channel-types` serve the in-code schemas, so a client validates and renders forms without its own copy of the vocabularies.
 - Deleting a channel template that is still inherited returns **409** with the dependent channel names; `POST /api/v1/channel-templates/{name}/inline` is the non-destructive way out.
+- `GET /api/v1/events` is one SSE stream carrying `log`, `config-changed`, `refresh-started` and `refresh-finished`. One endpoint, because it works unchanged in the webview, in a browser and under `curl` — `goTApaper logs -f` consumes exactly what the UI does.
+- `GET /api/v1/history` is the browsable log; `GET /api/v1/history/latest-per-channel` is the deduplication pointer the CLI's `config history` shows. Two different cardinalities, two paths.
+
+### Browser sessions (`api/session.go`)
+
+A browser cannot set an `Authorization` header on a navigation, so `requireToken` also accepts a `gotapaper_session` cookie carrying the same token. The cookie is set only by `GET /ui/session?ticket=…`, which redeems a **single-use, 60-second ticket** minted in-process by the tray (`Server.SessionURL`) and then redirects to a clean `/ui/`. The token therefore never reaches browser history, a `Referer`, or JavaScript. Mutating requests additionally require an absent or loopback `Origin` (`requireLoopbackOrigin`), as a second line behind `SameSite=Strict`.
+
+**The Wails window loads that same URL** rather than a bundled asset server, so the webview and a browser are one origin with one authentication mechanism. This is why the frontend needs no Wails bindings and `wails3 generate bindings` is not part of the build.
+
+### Desktop interface (`gui/`)
+
+`gui.Run` is the Wails v3 application: tray icon plus a window. It *is* the daemon — the store is single-writer, so a separate GUI process would be a second writer. `cmd/daemon.go` calls it from `runWindowed`, and `runHeadless` runs the same `startRefreshLoop` with no UI for a machine with no desktop session. Wails v3 is beta; the version is pinned and `gui/` is kept thin enough to re-target when its API moves.
+
+### Logging (`logging/`)
+
+A logrus hook feeds every entry into a fixed-size in-memory ring (`log.ring-size`, read by the API and the CLI) and a rotating JSON-lines file (`log.max-size-mb` × `log.max-backups` bounds the disk). **Size caps only, no time-based retention** — `lumberjack.MaxAge` is deliberately unset so one rule decides when a line goes away. Installed from `config.InitLogger`, which re-runs on any `log.*` change.
 
 ### Asset embedding
 
