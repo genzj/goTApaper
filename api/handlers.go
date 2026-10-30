@@ -345,18 +345,6 @@ func (h *handlers) deleteWatermarkLayer(w http.ResponseWriter, r *http.Request) 
 
 // wallpaper
 
-// listLatestPerChannel serves the deduplication pointer: one row per channel,
-// overwritten on every download. Distinct from the browsable history below,
-// which is a log.
-func (h *handlers) listLatestPerChannel(w http.ResponseWriter, r *http.Request) {
-	entries, err := h.wallpaper.History()
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, entries)
-}
-
 func (h *handlers) listWallpaperHistory(w http.ResponseWriter, r *http.Request) {
 	page, err := h.wallpaper.WallpaperHistory(
 		intQuery(r, "limit", 0), intQuery(r, "offset", 0),

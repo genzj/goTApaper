@@ -2,13 +2,11 @@ package channel
 
 import (
 	"bytes"
-	"errors"
 	"image"
 	"strings"
 	"time"
 
 	"github.com/genzj/goTApaper/config"
-	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
 )
@@ -101,13 +99,6 @@ type bingWallpaperChannelProvider int
 func (bingWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	var response bingResponse
 
-	historyManager := history.Default
-	h, err := historyManager.Load(bingChannelName)
-	if err != nil {
-		return nil, nil, nil, errors.New("loading history failed")
-	}
-	logrus.Debugf("history of %s channel: %+v", bingChannelName, h)
-
 	// TODO add market as parameter
 	if err := util.ReadJSON(bingGalleryURL, &response); err != nil {
 		return nil, nil, nil, err
@@ -131,6 +122,7 @@ func (bingWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, i
 	// fill metadata
 	meta := &PictureMeta{}
 	splitBingCopyright(item.Copyright, meta)
+	var err error
 	if meta.UploadTime, err = time.ParseInLocation(
 		"200601020304", item.FullStartDate, time.UTC,
 	); err != nil {
@@ -143,8 +135,8 @@ func (bingWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, i
 	meta.DownloadTime = time.Now()
 
 	// TODO extract following part as util function
-	if !setting.GetBool("force") && h.Has(finalURL) {
-		logrus.Infoln("bing url alreay exists in history file, ignore.")
+	if alreadyApplied(setting, finalURL) {
+		logrus.Infoln("this picture is already the last one applied, skipping it")
 		return nil, nil, meta, nil
 	}
 
@@ -159,8 +151,6 @@ func (bingWallpaperChannelProvider) Download(setting Settings) (*bytes.Reader, i
 	}
 
 	meta.URL = finalURL
-	h.Mark(finalURL)
-	_ = historyManager.Save(h)
 
 	return raw, img, meta, nil
 }

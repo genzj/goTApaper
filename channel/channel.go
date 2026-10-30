@@ -173,12 +173,27 @@ const (
 	// OptionKeyForce is injected per refresh rather than stored, so it is
 	// absent from every channel's schema.
 	OptionKeyForce = "force"
+	// OptionKeyLastAppliedURL is also injected per refresh: the URL this
+	// channel instance applied last time, from the wallpaper history. It is
+	// handed in rather than looked up so a channel needs no access to the
+	// store, and stays testable with a plain map.
+	OptionKeyLastAppliedURL = "last-applied-url"
 
 	OptionKeyStrategy = "strategy"
 	OptionKeyWidth    = "width"
 	OptionKeyHeight   = "height"
 	OptionKeyAPIKey   = "key"
 )
+
+// alreadyApplied reports whether url is the picture this channel instance
+// applied last time, in which case downloading it again would be wasted.
+// Forcing a refresh overrides it.
+func alreadyApplied(setting Settings, url string) bool {
+	if url == "" || setting.GetBool(OptionKeyForce) {
+		return false
+	}
+	return url == setting.GetString(OptionKeyLastAppliedURL)
+}
 
 // apiKeyOption describes the API key option shared by the keyed providers.
 func apiKeyOption(signupURL string) Option {

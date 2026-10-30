@@ -160,32 +160,3 @@ func TestWatermarkLayersAppendInOrder(t *testing.T) {
 			layers[0].Template, layers[1].Template)
 	}
 }
-
-func TestPutHistoryOverwritesPerChannel(t *testing.T) {
-	s := openMemory(t)
-
-	// One row per channel, exactly like the history.json map it replaces: a
-	// second download for the same channel replaces the first rather than
-	// appending.
-	for _, url := range []string{"https://example.invalid/1.jpg", "https://example.invalid/2.jpg"} {
-		if err := s.PutHistory(store.HistoryEntry{
-			ChannelName: "bing", URL: url, Title: "t",
-		}); err != nil {
-			t.Fatalf("PutHistory(%s) = %v", url, err)
-		}
-	}
-
-	entries, err := s.Histories()
-	if err != nil {
-		t.Fatalf("Histories = %v", err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("got %d history rows for one channel, want 1", len(entries))
-	}
-	if entries[0].URL != "https://example.invalid/2.jpg" {
-		t.Errorf("url = %q, want the most recent", entries[0].URL)
-	}
-	if entries[0].DownloadTime == 0 {
-		t.Error("download time should be stamped when the caller omits it")
-	}
-}

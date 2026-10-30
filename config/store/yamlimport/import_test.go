@@ -308,13 +308,60 @@ active-channels:
 		}
 	}
 
-	// History transfers one row per channel, matching the old file's shape.
-	h, err := s.History("bing")
+	// The imported URL is what deduplication sees, so the first refresh after
+	// the upgrade does not download the current picture again.
+	got, err := s.LastAppliedURL("bing")
 	if err != nil {
-		t.Fatalf("History = %v", err)
+		t.Fatalf("LastAppliedURL = %v", err)
 	}
-	if h.URL != "https://example.invalid/a.jpg" {
-		t.Errorf("history URL = %q, want the imported one", h.URL)
+	if got != "https://example.invalid/a.jpg" {
+		t.Errorf("last applied URL = %q, want the imported one", got)
+	}
+}
+
+func TestImportHistoryAttributesTypeKeysOnlyWhenUnambiguous(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+
+	// One bing instance, two unsplash instances.
+	if err := os.WriteFile(cfgPath, []byte(`
+channels:
+  bing:
+    type: bing-wallpaper
+  nature:
+    type: unsplash
+  city:
+    type: unsplash
+active-channels:
+  - bing
+  - nature
+  - city
+`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Keyed by type, as the versions that wrote one entry per channel type did.
+	if err := os.WriteFile(filepath.Join(dir, "history.json"), []byte(`{"Meta":{},"History":{
+		"bing-wallpaper":{"Name":"bing-wallpaper","History":"https://example.invalid/bing.jpg"},
+		"unsplash":{"Name":"unsplash","History":"https://example.invalid/unsplash.jpg"}
+	}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := openMemory(t)
+	if err := ImportIfPresent(s, cfgPath); err != nil {
+		t.Fatalf("ImportIfPresent = %v", err)
+	}
+
+	// The only bing-wallpaper instance inherits the type's entry.
+	if got, _ := s.LastAppliedURL("bing"); got != "https://example.invalid/bing.jpg" {
+		t.Errorf("bing = %q, want the type's entry", got)
+	}
+	// Two unsplash instances: attributing it to either would suppress a
+	// download the other one wanted, so neither gets it.
+	for _, name := range []string{"nature", "city"} {
+		if got, _ := s.LastAppliedURL(name); got != "" {
+			t.Errorf("%s = %q, want empty for an ambiguous type key", name, got)
+		}
 	}
 }
 

@@ -73,13 +73,6 @@ func (w *Wallpaper) RefreshNow(channels []string) (RefreshResult, error) {
 	}, nil
 }
 
-// History returns the most recent download recorded for each channel. This is
-// the deduplication pointer, one row per channel; WallpaperHistory is the
-// browsable log.
-func (w *Wallpaper) History() ([]store.HistoryEntry, error) {
-	return w.store.Histories()
-}
-
 // Reapply downloads a recorded wallpaper again and sets it.
 //
 // The stored URL may have expired -- several providers serve time-limited

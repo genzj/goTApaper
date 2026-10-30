@@ -268,7 +268,7 @@ func (s *Store) nextSortOrder() (int, error) {
 	return int(max.Int64) + 1, nil
 }
 
-// DeleteChannel removes a channel and its download history.
+// DeleteChannel removes a channel and its history.
 func (s *Store) DeleteChannel(name string) error {
 	return s.Tx(func(tx store.Store) error {
 		inner := tx.(*Store)
@@ -283,17 +283,10 @@ func (s *Store) DeleteChannel(name string) error {
 
 		// History is keyed by channel name, not by a foreign key, so it would
 		// otherwise linger and suppress a redownload if the channel were
-		// recreated under the same name later.
-		if _, err := inner.q().Exec(
-			"DELETE FROM download_history WHERE channel_name = ?", name,
-		); err != nil {
-			return err
-		}
-
-		// The browsable history goes too, for the same reason. Its thumbnail
-		// files are left to the orphan sweep rather than unlinked here: the
-		// store performs no filesystem side effects, and a file nothing
-		// references is exactly what that sweep reclaims.
+		// recreated under the same name later. Its thumbnail files are left to
+		// the orphan sweep rather than unlinked here: the store performs no
+		// filesystem side effects, and a file nothing references is exactly
+		// what that sweep reclaims.
 		if _, err := inner.q().Exec(
 			"DELETE FROM wallpaper_history WHERE channel_name = ?", name,
 		); err != nil {

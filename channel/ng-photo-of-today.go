@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
 )
@@ -83,13 +82,6 @@ type ngPoTChannelProvider int
 
 func (ngPoTChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
 	var page map[string]interface{}
-	historyManager := history.Default
-	h, err := historyManager.Load(ngChannelName)
-	if err != nil {
-		return nil, nil, nil, errors.New("loading history failed")
-	}
-
-	logrus.Debugf("history of %s channel: %+v", ngChannelName, h)
 
 	if err := util.ExtractJSON(ngBaseURL, &page, extractConfigJSON); err != nil {
 		return nil, nil, nil, err
@@ -173,8 +165,8 @@ func (ngPoTChannelProvider) Download(setting Settings) (*bytes.Reader, image.Ima
 		"picture URL decided",
 	)
 
-	if !setting.GetBool("force") && h.Has(finalURL) {
-		logrus.Infoln("ngItem url already exists in history file, ignore.")
+	if alreadyApplied(setting, finalURL) {
+		logrus.Infoln("this picture is already the last one applied, skipping it")
 		return nil, nil, meta, nil
 	}
 
@@ -190,10 +182,6 @@ func (ngPoTChannelProvider) Download(setting Settings) (*bytes.Reader, image.Ima
 	}
 
 	meta.URL = finalURL
-	h.Mark(finalURL)
-	if err := historyManager.Save(h); err != nil {
-		logrus.Warnf("save history error: %v", err)
-	}
 
 	return raw, img, meta, nil
 }

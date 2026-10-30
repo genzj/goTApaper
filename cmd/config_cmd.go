@@ -367,31 +367,6 @@ configuration unchanged.`,
 	},
 }
 
-// history subcommand
-
-var configHistoryCmd = &cobra.Command{
-	Use:   "history",
-	Short: "Show the most recent download for each channel",
-	Long: `Show the most recent download for each channel.
-
-This is the deduplication record, one row per channel, used to avoid
-downloading the same picture twice. The browsable log of every wallpaper that
-has been applied is "goTApaper history".`,
-	Run: func(cmd *cobra.Command, args []string) {
-		entries, err := currentStore().Histories()
-		if err != nil {
-			logrus.WithError(err).Fatal("cannot read history")
-		}
-
-		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		fmt.Fprintln(w, "CHANNEL\tTITLE\tURL")
-		for _, e := range entries {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", e.ChannelName, orDash(e.Title), e.URL)
-		}
-		w.Flush()
-	},
-}
-
 func init() {
 	configCmd.PersistentFlags().BoolVar(
 		&noDaemon, "local", false,
@@ -415,7 +390,7 @@ func init() {
 	)
 	configCmd.AddCommand(
 		configListCmd, configGetCmd, configSetCmd, configUnsetCmd,
-		channelCmd, channelTemplateCmd, configHistoryCmd,
+		channelCmd, channelTemplateCmd,
 	)
 	RootCmd.AddCommand(configCmd)
 }

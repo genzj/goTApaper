@@ -12,7 +12,6 @@ import (
 	"github.com/genzj/goTApaper/config/store"
 	"github.com/genzj/goTApaper/config/store/sqlite"
 	"github.com/genzj/goTApaper/config/store/yamlimport"
-	"github.com/genzj/goTApaper/history"
 )
 
 // provider is the process-wide configuration provider, created by loadConfig.
@@ -63,7 +62,6 @@ func loadConfig() {
 
 	provider = store.NewProvider(s)
 	config.SetCurrent(provider)
-	history.SetDefault(store.NewHistoryManager(s))
 
 	// Only a brand new database triggers an import. Once the YAML has been
 	// consumed and renamed, the database is the single source of truth, and a

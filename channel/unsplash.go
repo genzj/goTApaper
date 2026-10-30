@@ -154,6 +154,10 @@ func (unsplashWallpaperChannelProvider) Download(setting Settings) (*bytes.Reade
 	}
 	raw, img, format, err := util.DecodeFromResponse(resp)
 	meta.Format = format
+	// Recorded so the history entry can be re-applied. Every other channel
+	// already reported it; this one did not, which is why its entries had
+	// nothing to download again.
+	meta.URL = finalURL
 	return raw, img, meta, err
 }
 

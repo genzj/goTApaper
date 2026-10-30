@@ -1,3 +1,5 @@
+// Package history keeps the wallpaper history bounded: it enforces the entry
+// cap and reclaims thumbnail files that no entry references.
 package history
 
 import (
