@@ -89,7 +89,12 @@ make build-os-windows
     ./goTApaper generate-config --install
     ```
 2. Edit ~/.goTApaper/config.yaml to configure your preferred wallpaper sources
-3. Run in daemon mode:
+3. Run the desktop application -- a tray icon, and a window for settings,
+   history and logs:
+    ```bash
+    ./goTApaper gui
+    ```
+   On a machine with no desktop session, run the headless daemon instead:
     ```bash
     ./goTApaper daemon
     ```
@@ -210,10 +215,11 @@ make build-os-windows
 Enable debug logging:
 
 ```bash
-./goTApaper daemon --debug
+./goTApaper gui --debug
 ```
 
-Debug logs are written to stdout with full timestamps.
+Debug logs are written to stdout with full timestamps, and to a rotating log
+file in the application directory, which `./goTApaper logs -f` tails.
 
 ## Development
 
