@@ -56,6 +56,9 @@ type Options struct {
 	Logs       *service.Logs
 	// Version is reported by GET /status.
 	Version string
+	// Lifecycle serves POST /daemon/restart and /daemon/stop. Nil answers
+	// them with 501.
+	Lifecycle Lifecycle
 }
 
 // Start begins serving in the background.
@@ -84,6 +87,7 @@ func Start(opts Options) (*Server, error) {
 		logs:       logs,
 		events:     newEventHub(),
 		version:    opts.Version,
+		lifecycle:  opts.Lifecycle,
 	}
 	if h.downloader != nil {
 		// Subscribed here rather than by the caller, so every download --
@@ -232,6 +236,7 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	h.registerWallpaperRoutes(r)
 	h.registerLogRoutes(r)
 	h.registerEventRoutes(r)
+	h.registerDaemonRoutes(r)
 
 	// Catch-alls, so an unrouted path or an unsupported method produces the
 	// same JSON error shape as everything else. Go's ServeMux would otherwise

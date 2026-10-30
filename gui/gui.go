@@ -29,9 +29,15 @@ type Options struct {
 	Name        string
 	Description string
 
-	// SessionURL returns a URL that opens the interface with a session already
-	// established. It is called afresh for every navigation, because the
-	// ticket it embeds is single-use.
+	// InstanceID identifies the one GUI allowed to run. Launching a second
+	// with the same ID shows the first one's window instead. It should vary
+	// with the application directory: the limit exists because a database has
+	// one writer, so two GUIs on two directories are fine.
+	InstanceID string
+
+	// SessionURL returns a URL that opens the interface already signed in. It
+	// is called afresh for every navigation, because the ticket it embeds is
+	// single-use.
 	SessionURL func() (string, error)
 
 	// Refresh asks for a wallpaper refresh now. An empty slice means the
@@ -42,6 +48,10 @@ type Options struct {
 	OnReady func(tray *Tray)
 	// OnExit runs as the application shuts down.
 	OnExit func()
+	// AfterExit runs once shutdown has finished, the single-instance lock
+	// included, for restarting. On macOS the process exits straight after it
+	// returns, so it is the last place anything can happen.
+	AfterExit func()
 
 	// Icons for the tray. TemplateIcon is a macOS monochrome template.
 	Icon         []byte
@@ -59,16 +69,35 @@ type Options struct {
 // OS-level UI, and every platform requires their event loop to own the main
 // thread.
 func Run(opts Options) error {
-	app := application.New(application.Options{
+	// Assigned once the tray exists. A second launch can only be reported
+	// after the event loop starts, by which time it has been.
+	var tray *Tray
+
+	appOptions := application.Options{
 		Name:        opts.Name,
 		Description: opts.Description,
 		Mac: application.MacOptions{
-			// An accessory application: a tray tool should not take over the
-			// Dock or the menu bar, and closing its window should not quit it.
+			// Started as an accessory: a tray tool should not take over the
+			// Dock or the menu bar until it has a window to show. Opening the
+			// window switches to a regular application, so it can be found
+			// with Cmd+Tab, and hiding it switches back. See activation.
 			ActivationPolicy: application.ActivationPolicyAccessory,
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
-	})
+		PostShutdown: opts.AfterExit,
+	}
+	if opts.InstanceID != "" {
+		appOptions.SingleInstance = &application.SingleInstanceOptions{
+			UniqueID: opts.InstanceID,
+			// Launching it again is how a user asks to see it, so show it.
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+				if tray != nil {
+					tray.OpenWindow()
+				}
+			},
+		}
+	}
+	app := application.New(appOptions)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:   "main",
@@ -84,10 +113,11 @@ func Run(opts Options) error {
 	// Without this, closing the window would end the refresh loop too.
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
+		setForeground(false)
 		e.Cancel()
 	})
 
-	tray := newTray(app, window, opts)
+	tray = newTray(app, window, opts)
 
 	app.OnShutdown(func() {
 		if opts.OnExit != nil {
@@ -198,7 +228,7 @@ func (t *Tray) buildMenu() {
 		}
 	})
 
-	t.menu.Add("Quit").OnClick(func(*application.Context) { t.app.Quit() })
+	t.menu.Add("Quit").OnClick(func(*application.Context) { t.Quit() })
 }
 
 // OpenWindow shows the interface, navigating through a fresh session ticket.
@@ -213,9 +243,15 @@ func (t *Tray) OpenWindow() {
 		return
 	}
 
+	setForeground(true)
 	t.window.SetURL(url)
 	t.window.Show()
 	t.window.Focus()
+}
+
+// Quit shuts the application down, running OnExit and then AfterExit.
+func (t *Tray) Quit() {
+	t.app.Quit()
 }
 
 // OpenInBrowser opens the interface in the user's default browser.

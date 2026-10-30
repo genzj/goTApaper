@@ -191,6 +191,25 @@ func (c *Client) LastApplied(out any) error {
 	return c.Do(http.MethodGet, "/wallpaper/last-applied", nil, out)
 }
 
+// Stop asks the daemon to shut down. It returns once the daemon has accepted;
+// use Gone to wait for it to finish.
+func (c *Client) Stop() error {
+	return c.Do(http.MethodPost, "/daemon/stop", nil, nil)
+}
+
+// Gone waits up to timeout for the daemon to stop answering, reporting
+// whether it did.
+func (c *Client) Gone(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !c.alive() {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
 // Status reads what the daemon is doing.
 func (c *Client) Status(out any) error {
 	return c.Do(http.MethodGet, "/status", nil, out)
