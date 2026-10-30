@@ -19,6 +19,7 @@ type handlers struct {
 	downloader *service.Downloader
 	logs       *service.Logs
 	events     *eventHub
+	lifecycle  Lifecycle
 	version    string
 }
 

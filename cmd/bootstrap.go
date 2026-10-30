@@ -100,6 +100,7 @@ func applyFlagOverrides() {
 	// Subcommand flags that also shadow a setting.
 	applyFlagOverride(config.KeyWallpaperSetter, refreshCmd.PersistentFlags().Lookup("setter"))
 	applyFlagOverride(config.KeyDaemonInterval, daemonCmd.PersistentFlags().Lookup("interval"))
+	applyFlagOverride(config.KeyDaemonInterval, guiCmd.PersistentFlags().Lookup("interval"))
 }
 
 // applyFlagOverride records one flag as an override, but only if the user
