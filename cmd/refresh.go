@@ -131,9 +131,17 @@ func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
 			continue
 		}
 
-		// "force" is decided per run, so it is layered on top of the stored
-		// options rather than written to them.
-		setting := ch.Settings(map[string]any{channel.OptionKeyForce: force})
+		// Both are decided per run, so they are layered on top of the stored
+		// options rather than written to them. The last applied URL is what
+		// lets a channel skip a picture it already set.
+		lastURL, err := currentStore().LastAppliedURL(ch.Name)
+		if err != nil {
+			l.WithError(err).Warn("cannot read the last applied picture, downloading regardless")
+		}
+		setting := ch.Settings(map[string]any{
+			channel.OptionKeyForce:          force,
+			channel.OptionKeyLastAppliedURL: lastURL,
+		})
 		l.Debugf("setting: %+v", ch.Options)
 
 		if meta, err := detectOneChannel(ch, setting, wallpaperSetter, layers); err != nil || meta == nil {

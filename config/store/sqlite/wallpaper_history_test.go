@@ -31,9 +31,8 @@ func appendEntry(t *testing.T, s *Store, channelName string, at int64) int64 {
 func TestAppendWallpaperHistoryIsALogNotAnUpsert(t *testing.T) {
 	s := openMemory(t)
 
-	// The same channel applied twice is two events. This is the whole reason
-	// the table exists separately from download_history, whose primary key on
-	// channel_name makes the second write replace the first.
+	// The same channel applied twice is two events: this is a log, not a
+	// latest-value table.
 	appendEntry(t, s, "bing", 100)
 	appendEntry(t, s, "bing", 200)
 
@@ -46,25 +45,62 @@ func TestAppendWallpaperHistoryIsALogNotAnUpsert(t *testing.T) {
 	}
 }
 
-func TestAppendWallpaperHistoryDoesNotDisturbTheDedupPointer(t *testing.T) {
+func TestLastAppliedURLIsTheNewestEntryOfThatChannel(t *testing.T) {
 	s := openMemory(t)
 
-	if err := s.PutHistory(store.HistoryEntry{
-		ChannelName: "bing", URL: "https://example.test/first",
+	appendEntry(t, s, "bing", 100) // https://example.test/bing
+	if _, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
+		ChannelName: "bing", URL: "https://example.test/newer", DownloadTime: 200,
 	}); err != nil {
-		t.Fatalf("PutHistory: %v", err)
+		t.Fatalf("AppendWallpaperHistory: %v", err)
 	}
-	appendEntry(t, s, "bing", 100)
+	// Another channel's newer picture must not count: deduplication is per
+	// channel instance.
+	if _, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
+		ChannelName: "ng", URL: "https://example.test/ng", DownloadTime: 300,
+	}); err != nil {
+		t.Fatalf("AppendWallpaperHistory: %v", err)
+	}
 
-	// Deduplication must still see exactly what it stored: the browsable
-	// history is a separate concern and changing it would change which
-	// pictures get re-downloaded.
-	got, err := s.History("bing")
+	got, err := s.LastAppliedURL("bing")
 	if err != nil {
-		t.Fatalf("History: %v", err)
+		t.Fatalf("LastAppliedURL: %v", err)
 	}
-	if got.URL != "https://example.test/first" {
-		t.Fatalf("dedup URL = %q, want the one PutHistory stored", got.URL)
+	if got != "https://example.test/newer" {
+		t.Fatalf("LastAppliedURL(bing) = %q, want the newest bing entry", got)
+	}
+}
+
+func TestLastAppliedURLWithNoHistoryIsEmpty(t *testing.T) {
+	s := openMemory(t)
+
+	// No history is the normal state of a new channel, not an error.
+	got, err := s.LastAppliedURL("never-used")
+	if err != nil {
+		t.Fatalf("LastAppliedURL: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("LastAppliedURL = %q, want empty", got)
+	}
+}
+
+func TestLastAppliedURLSurvivesPruningToOne(t *testing.T) {
+	s := openMemory(t)
+
+	appendEntry(t, s, "ng", 100)
+	appendEntry(t, s, "bing", 200)
+
+	// Even the tightest cap keeps the newest row, and that is all
+	// deduplication reads for the channel that owns it.
+	if _, err := s.PruneWallpaperHistory(1); err != nil {
+		t.Fatalf("PruneWallpaperHistory: %v", err)
+	}
+	got, err := s.LastAppliedURL("bing")
+	if err != nil {
+		t.Fatalf("LastAppliedURL: %v", err)
+	}
+	if got != "https://example.test/bing" {
+		t.Fatalf("LastAppliedURL = %q after pruning", got)
 	}
 }
 

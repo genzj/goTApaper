@@ -2,7 +2,6 @@ package channel
 
 import (
 	"bytes"
-	"errors"
 	"image"
 	"net/http"
 	"net/url"
@@ -10,7 +9,6 @@ import (
 	"time"
 
 	"github.com/genzj/goTApaper/config"
-	"github.com/genzj/goTApaper/history"
 
 	"github.com/genzj/goTApaper/util"
 	"github.com/sirupsen/logrus"
@@ -63,12 +61,6 @@ func extractTitleFromURL(pageURL string) string {
 type pexelsCuratedChannelProvider int
 
 func (pexelsCuratedChannelProvider) Download(setting Settings) (*bytes.Reader, image.Image, *PictureMeta, error) {
-	historyManager := history.Default
-	h, err := historyManager.Load(pexelsCuratedChannelName)
-	if err != nil {
-		return nil, nil, nil, errors.New("loading history failed")
-	}
-	logrus.Debugf("history of %s channel: %+v", pexelsCuratedChannelName, h)
 
 	meta := &PictureMeta{}
 	meta.Channel = pexelsCuratedChannelName
@@ -116,8 +108,8 @@ func (pexelsCuratedChannelProvider) Download(setting Settings) (*bytes.Reader, i
 	finalURL := photoURL + "?" + params.Encode()
 	logrus.WithField("photo-URL", finalURL).Debug("downloading photo")
 
-	if !setting.GetBool("force") && h.Has(finalURL) {
-		logrus.Info("pexels curated photo url alreay exists in history file, ignore.")
+	if alreadyApplied(setting, finalURL) {
+		logrus.Info("this picture is already the last one applied, skipping it")
 		return nil, nil, meta, nil
 	}
 
@@ -132,8 +124,6 @@ func (pexelsCuratedChannelProvider) Download(setting Settings) (*bytes.Reader, i
 	}
 
 	meta.URL = finalURL
-	h.Mark(finalURL)
-	_ = historyManager.Save(h)
 
 	return raw, img, meta, err
 }

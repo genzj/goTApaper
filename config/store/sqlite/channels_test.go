@@ -276,10 +276,10 @@ func TestReorderChannels(t *testing.T) {
 func TestDeleteChannelClearsHistory(t *testing.T) {
 	s := openMemory(t)
 
-	if err := s.PutHistory(store.HistoryEntry{
+	if _, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
 		ChannelName: "bing", URL: "https://example.invalid/a.jpg",
 	}); err != nil {
-		t.Fatalf("PutHistory = %v", err)
+		t.Fatalf("AppendWallpaperHistory = %v", err)
 	}
 	if err := s.DeleteChannel("bing"); err != nil {
 		t.Fatalf("DeleteChannel = %v", err)
@@ -287,8 +287,12 @@ func TestDeleteChannelClearsHistory(t *testing.T) {
 
 	// A stale history row would suppress the first download of a channel
 	// recreated later under the same name.
-	if _, err := s.History("bing"); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("History after DeleteChannel = %v, want ErrNotFound", err)
+	url, err := s.LastAppliedURL("bing")
+	if err != nil {
+		t.Fatalf("LastAppliedURL = %v", err)
+	}
+	if url != "" {
+		t.Errorf("LastAppliedURL after DeleteChannel = %q, want empty", url)
 	}
 }
 

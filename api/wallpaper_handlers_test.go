@@ -114,26 +114,6 @@ func TestHistoryRouteCapsThePageSize(t *testing.T) {
 	}
 }
 
-func TestLatestPerChannelRouteStillServesTheDedupPointer(t *testing.T) {
-	h, s := newTestServer(t)
-	if err := s.PutHistory(store.HistoryEntry{
-		ChannelName: "bing", URL: "https://example.test/dedup.jpg",
-	}); err != nil {
-		t.Fatalf("PutHistory: %v", err)
-	}
-
-	// Moving the browsable history onto /history must not have taken the
-	// deduplication view away from the CLI.
-	var entries []store.HistoryEntry
-	rec := getJSON(t, h, "/api/v1/history/latest-per-channel", &entries)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
-	}
-	if len(entries) != 1 || entries[0].URL != "https://example.test/dedup.jpg" {
-		t.Fatalf("entries = %+v", entries)
-	}
-}
-
 func TestHistoryEntryRouteAndNotFound(t *testing.T) {
 	h, s := newTestServer(t)
 	ids := seedHistory(t, s, 1)

@@ -1,6 +1,8 @@
 package sqlite
 
 import (
+	"database/sql"
+	"path/filepath"
 	"testing"
 )
 
@@ -68,5 +70,101 @@ func TestLoadMigrationsRejectsDuplicateVersions(t *testing.T) {
 	}
 	if err := checkMigrations(ms); err != nil {
 		t.Errorf("a well-formed set was rejected: %v", err)
+	}
+}
+
+// openAtVersion builds a database file migrated only up to version, so a test
+// can seed it with data the later migrations have to carry forward.
+func openAtVersion(t *testing.T, version int) (*sql.DB, string) {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "gotapaper.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	ms, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	for _, m := range ms {
+		if m.version > version {
+			break
+		}
+		if err := applyMigration(db, m); err != nil {
+			t.Fatalf("applying %s: %v", m.name, err)
+		}
+	}
+	return db, path
+}
+
+func TestMigration3CarriesDownloadHistoryIntoTheWallpaperHistory(t *testing.T) {
+	db, path := openAtVersion(t, 2)
+
+	// The seeded channels are ng (ng-photo-of-today) and bing
+	// (bing-wallpaper). Add two instances of one type to make that type key
+	// ambiguous.
+	for _, stmt := range []string{
+		`INSERT INTO channel_instances (name, type, sort_order) VALUES
+		     ('nature', 'unsplash', 2), ('city', 'unsplash', 3)`,
+		// Keyed by type, as the SQLite-era code wrote it: unambiguous.
+		`INSERT INTO download_history (channel_name, url, title, download_time)
+		 VALUES ('bing-wallpaper', 'https://example.invalid/bing.jpg', 'Bing', 1000)`,
+		// Keyed by instance name, as an imported history.json could be.
+		`INSERT INTO download_history (channel_name, url, download_time)
+		 VALUES ('ng', 'https://example.invalid/ng.jpg', 1001)`,
+		// Keyed by a type two instances share: no telling whose it was.
+		`INSERT INTO download_history (channel_name, url, download_time)
+		 VALUES ('unsplash', 'https://example.invalid/unsplash.jpg', 1002)`,
+		// Keyed by nothing that still exists.
+		`INSERT INTO download_history (channel_name, url, download_time)
+		 VALUES ('removed-long-ago', 'https://example.invalid/gone.jpg', 1003)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seeding: %v\n%s", err, stmt)
+		}
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	for channel, want := range map[string]string{
+		"bing":   "https://example.invalid/bing.jpg",
+		"ng":     "https://example.invalid/ng.jpg",
+		"nature": "",
+		"city":   "",
+	} {
+		got, err := s.LastAppliedURL(channel)
+		if err != nil {
+			t.Fatalf("LastAppliedURL(%s): %v", channel, err)
+		}
+		if got != want {
+			t.Errorf("LastAppliedURL(%s) = %q, want %q", channel, got, want)
+		}
+	}
+
+	// The carried row keeps its metadata and its original time.
+	bing, err := s.WallpaperHistory(0, 0)
+	if err != nil {
+		t.Fatalf("WallpaperHistory: %v", err)
+	}
+	if len(bing) != 2 {
+		t.Fatalf("carried %d rows, want 2 (bing and ng only)", len(bing))
+	}
+
+	var tables int
+	if err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'download_history'",
+	).Scan(&tables); err != nil {
+		t.Fatalf("checking for the dropped table: %v", err)
+	}
+	if tables != 0 {
+		t.Error("download_history survived the migration")
 	}
 }

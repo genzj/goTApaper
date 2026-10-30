@@ -15,8 +15,8 @@ const wallpaperHistoryColumns = `id, channel_name, channel_type, url,
 
 // AppendWallpaperHistory records one applied wallpaper.
 //
-// Unlike PutHistory there is no upsert: this table is a log, and the same
-// picture applied twice is two events.
+// There is no upsert: this table is a log, and the same picture applied twice
+// is two events.
 func (s *Store) AppendWallpaperHistory(e store.WallpaperHistoryEntry) (int64, error) {
 	if e.ChannelName == "" {
 		return 0, fmt.Errorf("a wallpaper history entry needs a channel name")
@@ -96,6 +96,35 @@ func (s *Store) WallpaperHistoryEntryByID(id int64) (store.WallpaperHistoryEntry
 		)
 	}
 	return e, err
+}
+
+// LastAppliedURL returns the URL of the newest entry for a channel instance.
+//
+// This is the whole of deduplication. It used to be a separate
+// download_history table holding one URL per channel, which was this query
+// kept as a copy -- and a copy that went stale in its own ways: it was keyed by
+// channel *type*, so two instances of one type shared it, and it was written
+// at download time, so a picture that failed to apply still counted as seen.
+func (s *Store) LastAppliedURL(channelName string) (string, error) {
+	var url string
+	err := s.q().QueryRow(
+		`SELECT url FROM wallpaper_history WHERE channel_name = ?
+		 ORDER BY download_time DESC, id DESC LIMIT 1`,
+		channelName,
+	).Scan(&url)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return url, err
+}
+
+// nilIfZero maps an absent timestamp to SQL NULL rather than to the Unix
+// epoch, so "unknown upload time" stays distinguishable from 1970.
+func nilIfZero(ts int64) any {
+	if ts == 0 {
+		return nil
+	}
+	return ts
 }
 
 // PruneWallpaperHistory deletes the oldest rows beyond keepAtMost, returning

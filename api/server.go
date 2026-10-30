@@ -176,9 +176,6 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	r.handle("PUT", "/watermark-layers/{id}", h.upsertWatermarkLayer)
 	r.handle("DELETE", "/watermark-layers/{id}", h.deleteWatermarkLayer)
 
-	// The deduplication pointer, one row per channel, kept at its own path now
-	// that /history serves the browsable log.
-	r.handle("GET", "/history/latest-per-channel", h.listLatestPerChannel)
 	r.handle("GET", "/history", h.listWallpaperHistory)
 	r.handle("POST", "/history/prune", h.pruneHistory)
 	r.handle("GET", "/history/{id}", h.getWallpaperHistoryEntry)

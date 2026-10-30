@@ -36,6 +36,9 @@ func (fixedPictureProvider) Download(setting Settings) (*bytes.Reader, image.Ima
 		logrus.Infoln("blank url, ignore")
 		return nil, nil, meta, nil
 	}
+	// The configured URL as written, file:// included, so re-applying the
+	// history entry reads the same picture the same way.
+	meta.URL = finalURL
 
 	parsedURL, err := url.ParseRequestURI(finalURL)
 	if err != nil {

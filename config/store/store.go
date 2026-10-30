@@ -151,25 +151,10 @@ type WatermarkBackground struct {
 	Paddings    []float64 `json:"paddings"`
 }
 
-// HistoryEntry records the most recent download for one channel. There is at
-// most one entry per channel, matching the semantics of the history.json file
-// it replaces.
-type HistoryEntry struct {
-	ChannelName  string `json:"channelName"`
-	URL          string `json:"url"`
-	Title        string `json:"title,omitempty"`
-	Credit       string `json:"credit,omitempty"`
-	UploadTime   int64  `json:"uploadTime,omitempty"`
-	DownloadTime int64  `json:"downloadTime"`
-	FilePath     string `json:"filePath,omitempty"`
-}
-
-// WallpaperHistoryEntry is one applied wallpaper, as recorded in the
-// browsable history.
+// WallpaperHistoryEntry is one applied wallpaper, as recorded in the history.
 //
-// It is distinct from HistoryEntry, which is the deduplication pointer: there
-// is one HistoryEntry per channel, overwritten on every download, and one
-// WallpaperHistoryEntry per picture ever applied.
+// The history is also what deduplicates downloads: a channel skips a picture
+// whose URL matches its newest entry here (see LastAppliedURL).
 type WallpaperHistoryEntry struct {
 	ID int64 `json:"id"`
 	// ChannelName is the channel instance that supplied the picture, and
@@ -249,14 +234,6 @@ type Store interface {
 	UpsertWatermarkLayer(l WatermarkLayer) error
 	DeleteWatermarkLayer(id int64) error
 
-	// History
-
-	// History returns the recorded download for one channel, or ErrNotFound.
-	History(channelName string) (HistoryEntry, error)
-	Histories() ([]HistoryEntry, error)
-	// PutHistory inserts or overwrites the entry for a channel.
-	PutHistory(e HistoryEntry) error
-
 	// Wallpaper history
 
 	// AppendWallpaperHistory records one applied wallpaper and returns its id.
@@ -269,6 +246,10 @@ type Store interface {
 	WallpaperHistoryCount() (int, error)
 	// WallpaperHistoryEntryByID returns one row, or ErrNotFound.
 	WallpaperHistoryEntryByID(id int64) (WallpaperHistoryEntry, error)
+	// LastAppliedURL returns the URL of the newest entry for a channel
+	// instance, or "" if it has none. It is what deduplicates downloads: a
+	// channel skips a picture it applied last time.
+	LastAppliedURL(channelName string) (string, error)
 	// PruneWallpaperHistory deletes the oldest rows beyond keepAtMost and
 	// returns the thumbnail path of every row it deleted. A keepAtMost of
 	// zero or less keeps everything.
