@@ -210,20 +210,29 @@ func TestATakenRememberedPortFallsBackToAFreshOne(t *testing.T) {
 	}
 }
 
-func TestAnUnbindableRememberedPortFallsBackToAFreshOne(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(wire.PortPath(dir), []byte("1\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+func TestAnUnusableRememberedPortFallsBackToAFreshOne(t *testing.T) {
+	// A damaged or hand-edited port file must not stop the server starting.
+	// (A remembered port that is merely taken is covered above; whether a
+	// low port is bindable at all differs by OS, so it is not relied on.)
+	for _, content := range []string{"not-a-port\n", "70000\n", "-5\n", ""} {
+		dir := t.TempDir()
+		if err := os.WriteFile(wire.PortPath(dir), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
 
-	// Port 1 is privileged and cannot be bound by an ordinary user, so the
-	// start must not fail just because that is what was remembered.
-	l, err := listen(dir, 0)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer l.Close()
-	if got := l.Addr().(*net.TCPAddr).Port; got == 1 {
-		t.Fatal("bound a privileged port")
+		l, err := listen(dir, 0)
+		if err != nil {
+			t.Fatalf("port file %q: listen: %v", content, err)
+		}
+		port := l.Addr().(*net.TCPAddr).Port
+		l.Close()
+		if port <= 0 {
+			t.Fatalf("port file %q: bound port %d", content, port)
+		}
+
+		// The fresh port is remembered in place of the unusable value.
+		if got := rememberedPort(dir); got != port {
+			t.Errorf("port file %q: remembered %d, want %d", content, got, port)
+		}
 	}
 }
