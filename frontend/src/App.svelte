@@ -1,17 +1,20 @@
 <script lang="ts">
+  import { api } from './lib/api'
   import { redeemTicket, signOut, token } from './lib/auth'
   import { connect, connected, disconnect } from './lib/events'
   import SignIn from './views/SignIn.svelte'
   import Wallpaper from './views/Wallpaper.svelte'
   import Settings from './views/Settings.svelte'
   import Channels from './views/Channels.svelte'
+  import History from './views/History.svelte'
   import Logs from './views/Logs.svelte'
 
   const tabs = [
     { id: 'wallpaper', label: 'Wallpaper' },
     { id: 'settings', label: 'Settings' },
     { id: 'channels', label: 'Channels' },
-    { id: 'logs', label: 'Logs & History' },
+    { id: 'history', label: 'History' },
+    { id: 'logs', label: 'Logs' },
   ] as const
 
   type TabID = (typeof tabs)[number]['id']
@@ -37,6 +40,28 @@
   redeemTicket()
     .catch((e) => (notice = e instanceof Error ? e.message : String(e)))
     .finally(() => (ready = true))
+
+  let restarting = $state(false)
+  async function restart() {
+    if (!confirm('Restart the goTApaper daemon? A download in progress is abandoned.')) return
+    restarting = true
+    try {
+      await api.restartDaemon()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+      restarting = false
+    }
+  }
+  // The restart is over once the stream has dropped and come back.
+  let droppedDuringRestart = false
+  $effect(() => {
+    if (!restarting) return
+    if (!$connected) droppedDuringRestart = true
+    else if (droppedDuringRestart) {
+      droppedDuringRestart = false
+      restarting = false
+    }
+  })
 
   // Connect while signed in, and drop the stream on signing out -- including
   // the automatic sign-out when the daemon rejects the token.
@@ -69,10 +94,17 @@
       {/each}
     </nav>
     <span class="status" class:down={!$connected}>
-      {$connected ? 'Daemon connected' : 'Daemon disconnected — reconnecting…'}
+      {#if restarting}
+        Daemon restarting…
+      {:else if $connected}
+        Daemon connected
+      {:else}
+        Daemon disconnected — reconnecting…
+      {/if}
     </span>
+    <button class="small" onclick={restart} disabled={restarting}>Restart daemon</button>
     <button
-      class="signout"
+      class="small"
       title="Forget the saved token in this browser"
       onclick={() => {
         notice = 'Signed out.'
@@ -93,6 +125,8 @@
     <Settings />
   {:else if active === 'channels'}
     <Channels />
+  {:else if active === 'history'}
+    <History />
   {:else}
     <Logs />
   {/if}
@@ -132,7 +166,7 @@
     color: var(--warn);
   }
 
-  .signout {
+  .small {
     font-size: 0.8rem;
   }
 

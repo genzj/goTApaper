@@ -57,6 +57,9 @@
       <input id={spec.key} type="number" step="1" bind:value />
     {:else if spec.kind === 'float'}
       <input id={spec.key} type="number" step="any" bind:value />
+    {:else if spec.kind === 'stringMap'}
+      <textarea id={spec.key} rows="3" placeholder="key=value" bind:value></textarea>
+      <span class="hint">One <code>key=value</code> per line.</span>
     {:else if spec.secret}
       <input
         id={spec.key}
