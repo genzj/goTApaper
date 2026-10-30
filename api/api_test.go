@@ -24,7 +24,22 @@ func init() {
 func newTestServer(t *testing.T) (http.Handler, store.Store) {
 	t.Helper()
 	h, s := newTestHandlers(t, nil)
-	return h.routes(testToken, newTicketStore()), s
+	return testRoutes(h, newTicketStore()), s
+}
+
+// testRoutes builds the route table as a real client reaches it.
+//
+// httptest.NewRequest addresses requests to example.com, which the server
+// rejects as a possible DNS-rebinding page. A real client names 127.0.0.1, so
+// the shim does the same for any request a test has not addressed itself.
+func testRoutes(h *handlers, tickets *ticketStore) http.Handler {
+	routes := h.routes(testToken, tickets)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "example.com" {
+			r.Host = LoopbackHost + ":8080"
+		}
+		routes.ServeHTTP(w, r)
+	})
 }
 
 // newTestHandlers builds the handler set over an in-memory store. A nil gate
@@ -441,7 +456,7 @@ func TestUnknownFieldIsRejected(t *testing.T) {
 
 func TestRefresh(t *testing.T) {
 	handlers, _ := newTestHandlers(t, nil)
-	h := handlers.routes(testToken, newTicketStore())
+	h := testRoutes(handlers, newTicketStore())
 
 	rec := do(t, h, "POST", "/api/v1/refresh", "", testToken)
 	if rec.Code != http.StatusAccepted {

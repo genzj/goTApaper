@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -63,10 +65,9 @@ func Start(opts Options) (*Server, error) {
 		return nil, err
 	}
 
-	addr := net.JoinHostPort(LoopbackHost, fmt.Sprintf("%d", opts.Port))
-	listener, err := net.Listen("tcp", addr)
+	listener, err := listen(opts.AppDir, opts.Port)
 	if err != nil {
-		return nil, fmt.Errorf("cannot listen on %s: %w", addr, err)
+		return nil, err
 	}
 
 	logs := opts.Logs
@@ -120,6 +121,61 @@ func Start(opts Options) (*Server, error) {
 	return srv, nil
 }
 
+// listen binds the API to loopback.
+//
+// An explicit port is used as given. With port 0 the server would land on a
+// new ephemeral port every start, which breaks the interface: its saved token
+// lives in the browser's local storage, which is scoped to the origin, port
+// included, and a tab left open across a restart points at a port nothing
+// listens on any more. So port 0 first asks for the port the previous start
+// got, and only falls back to a fresh one when that is taken. The bind address
+// is LoopbackHost either way.
+func listen(appDir string, port int) (net.Listener, error) {
+	if port == 0 {
+		if last := rememberedPort(appDir); last > 0 {
+			addr := net.JoinHostPort(LoopbackHost, strconv.Itoa(last))
+			if l, err := net.Listen("tcp", addr); err == nil {
+				return l, nil
+			}
+			logrus.WithField("port", last).Debug(
+				"the previously used API port is taken, picking another",
+			)
+		}
+	}
+
+	addr := net.JoinHostPort(LoopbackHost, strconv.Itoa(port))
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("cannot listen on %s: %w", addr, err)
+	}
+
+	if port == 0 {
+		rememberPort(appDir, l.Addr().(*net.TCPAddr).Port)
+	}
+	return l, nil
+}
+
+// rememberedPort reads the port the last ephemeral bind got, or 0.
+func rememberedPort(appDir string) int {
+	data, err := os.ReadFile(wire.PortPath(appDir))
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || port <= 0 || port > 65535 {
+		return 0
+	}
+	return port
+}
+
+// rememberPort records an ephemeral port for the next start. A failure costs
+// only that preference, so it is logged rather than returned.
+func rememberPort(appDir string, port int) {
+	if err := os.WriteFile(wire.PortPath(appDir), []byte(strconv.Itoa(port)+"\n"), 0600); err != nil {
+		logrus.WithError(err).Debug("cannot remember the API port")
+	}
+}
+
 // Addr reports the address being served.
 func (s *Server) Addr() string { return s.listener.Addr().String() }
 
@@ -152,11 +208,19 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	// client deciding whether to start a daemon.
 	mux.HandleFunc("GET "+wire.BasePath+"/healthz", h.health)
 
-	// Also unauthenticated, because it is how a browser *acquires* its
-	// credential. It is not a hole: the ticket it demands is a single-use
-	// 60-second secret this process minted itself, and the handler refuses
-	// anything else. See session.go.
-	mux.Handle("GET "+uiSessionPath, &sessionHandler{tickets: tickets, token: token})
+	// Also unauthenticated, because it is how the interface acquires its
+	// credential: a single-use ticket is traded for the token. See session.go.
+	mux.Handle("POST "+ticketExchangePath, &ticketExchange{tickets: tickets, token: token})
+
+	// The interface's static assets. Unauthenticated: the bundle holds no
+	// secrets -- it asks for the token, and every API call it makes carries
+	// it. Serving it openly is what lets the page load far enough to ask.
+	mux.Handle("GET "+uiPath, &uiHandler{assets: uiAssets})
+	// Bare "/ui" redirects, or the relative asset paths in index.html would
+	// resolve against "/" and 404.
+	mux.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, uiPath, http.StatusMovedPermanently)
+	})
 
 	authed := http.NewServeMux()
 	r := &router{mux: authed, allowed: map[string][]string{}}
@@ -169,16 +233,6 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	h.registerLogRoutes(r)
 	h.registerEventRoutes(r)
 
-	// The frontend. Inside the authenticated mux, so the interface is no more
-	// reachable than the API it drives; a browser authenticates with the
-	// session cookie the handshake above set.
-	authed.Handle("GET "+uiPath, &uiHandler{assets: uiAssets})
-	// Bare "/ui" redirects, or the relative asset paths in index.html would
-	// resolve against "/" and 404.
-	authed.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, uiPath, http.StatusMovedPermanently)
-	})
-
 	// Catch-alls, so an unrouted path or an unsupported method produces the
 	// same JSON error shape as everything else. Go's ServeMux would otherwise
 	// answer with a plain-text body that a client decoding JSON cannot read.
@@ -189,21 +243,21 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	authed.HandleFunc("/", r.unmatched)
 	authed.HandleFunc(wire.BasePath+"/", r.unmatched)
 
-	mux.Handle("/", requireToken(token, requireLoopbackOrigin(authed)))
+	mux.Handle("/", requireToken(token, authed))
 
 	// Recovery is outermost so a panic in any handler, or in the auth
 	// middleware, still yields a JSON response instead of a dropped
 	// connection.
-	return recoverPanics(logRequests(mux))
+	return recoverPanics(logRequests(requireLoopbackHost(requireLoopbackOrigin(mux))))
 }
 
 // logRequests records each request at debug level. Authorization headers are
-// never logged, and a session ticket in the query string is redacted: the log
-// now goes to a file, so a credential written here would outlive the request.
+// never logged, and a ticket cannot appear here: it travels in a URL fragment,
+// which a browser never sends.
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logrus.WithField("method", r.Method).WithField(
-			"path", trimTicket(r.URL.RequestURI()),
+			"path", r.URL.RequestURI(),
 		).Debug("API request")
 		next.ServeHTTP(w, r)
 	})

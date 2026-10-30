@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
+    ApiError,
     api,
-    imageURL,
     type HistoryEntry,
     type HistoryPage,
     type LogEntry,
@@ -9,7 +9,8 @@
     type SweepResult,
   } from '../lib/api'
   import { bytes, clock, unixTime } from '../lib/format'
-  import { lastRefresh, refreshing, tail } from '../lib/events'
+  import AuthImage from '../lib/AuthImage.svelte'
+  import { downloading, lastDownload, tail } from '../lib/events'
 
   // Logs
 
@@ -98,16 +99,28 @@
   async function reapply(entry: HistoryEntry) {
     historyError = ''
     try {
+      // Starts the download and returns; the outcome arrives as an event.
       await api.reapply(entry.id)
     } catch (e) {
-      // Worth being explicit: several providers expire their links, so this
-      // is an expected failure rather than a bug.
       historyError =
-        (e instanceof Error ? e.message : String(e)) +
-        ' — the provider may no longer serve this picture.'
+        e instanceof ApiError && e.status === 409
+          ? 'A download is already in progress.'
+          : e instanceof Error
+            ? e.message
+            : String(e)
     }
-    await loadHistory()
   }
+
+  // A failed re-apply is reported here, since the request itself only
+  // started it. Several providers expire their links, so this is an expected
+  // failure rather than a bug.
+  $effect(() => {
+    const done = $lastDownload
+    if (done?.job.kind === 'reapply' && done.error) {
+      historyError = `${done.error} — the provider may no longer serve this picture.`
+    }
+  })
+
 
   async function remove(entry: HistoryEntry) {
     historyError = ''
@@ -137,7 +150,7 @@
   }
 
   $effect(() => {
-    void $lastRefresh
+    void $lastDownload
     loadHistory()
   })
 
@@ -239,7 +252,7 @@
     {#each history.entries as entry (entry.id)}
       <div class="card item">
         {#if entry.thumbPath}
-          <img src={imageURL(`/history/${entry.id}/thumbnail`)} alt={entry.title ?? ''} />
+          <AuthImage path={`/history/${entry.id}/thumbnail`} alt={entry.title ?? ''} />
         {:else}
           <div class="noimage muted">no thumbnail</div>
         {/if}
@@ -252,7 +265,7 @@
           {/if}
         </div>
         <div class="row">
-          <button onclick={() => reapply(entry)} disabled={!entry.url || $refreshing}>
+          <button onclick={() => reapply(entry)} disabled={!entry.url || $downloading !== null}>
             Re-apply
           </button>
           <button onclick={() => remove(entry)}>Delete</button>
@@ -330,7 +343,7 @@
     gap: 0.75rem;
   }
 
-  .item img,
+  .item :global(img),
   .noimage {
     width: 100%;
     aspect-ratio: 16 / 9;

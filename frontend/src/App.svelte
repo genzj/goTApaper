@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { connect, connected } from './lib/events'
+  import { redeemTicket, signOut, token } from './lib/auth'
+  import { connect, connected, disconnect } from './lib/events'
+  import SignIn from './views/SignIn.svelte'
   import Wallpaper from './views/Wallpaper.svelte'
   import Settings from './views/Settings.svelte'
   import Channels from './views/Channels.svelte'
@@ -28,30 +30,64 @@
     window.location.hash = id
   }
 
-  connect()
+  // A ticket from the tray is traded before deciding whether to ask for the
+  // token, so opening from the tray never flashes the sign-in page.
+  let ready = $state(false)
+  let notice = $state('')
+  redeemTicket()
+    .catch((e) => (notice = e instanceof Error ? e.message : String(e)))
+    .finally(() => (ready = true))
+
+  // Connect while signed in, and drop the stream on signing out -- including
+  // the automatic sign-out when the daemon rejects the token.
+  let wasSignedIn = false
+  $effect(() => {
+    if (!ready) return
+    if ($token) {
+      wasSignedIn = true
+      connect()
+      return
+    }
+    disconnect()
+    if (wasSignedIn && !notice) notice = 'The daemon no longer accepts the saved token.'
+  })
 </script>
 
 <svelte:window on:hashchange={() => (active = tabFromHash())} />
 
 <header>
   <h1>goTApaper</h1>
-  <nav>
-    {#each tabs as tab (tab.id)}
-      <button
-        class:active={active === tab.id}
-        onclick={() => select(tab.id)}
-      >
-        {tab.label}
-      </button>
-    {/each}
-  </nav>
-  <span class="status" title={$connected ? 'Connected to the daemon' : 'Reconnecting'}>
-    {$connected ? '● live' : '○ offline'}
-  </span>
+  {#if $token}
+    <nav>
+      {#each tabs as tab (tab.id)}
+        <button
+          class:active={active === tab.id}
+          onclick={() => select(tab.id)}
+        >
+          {tab.label}
+        </button>
+      {/each}
+    </nav>
+    <span class="status" class:down={!$connected}>
+      {$connected ? 'Daemon connected' : 'Daemon disconnected — reconnecting…'}
+    </span>
+    <button
+      class="signout"
+      title="Forget the saved token in this browser"
+      onclick={() => {
+        notice = 'Signed out.'
+        signOut()
+      }}>Sign out</button
+    >
+  {/if}
 </header>
 
 <main>
-  {#if active === 'wallpaper'}
+  {#if !ready}
+    <p class="muted">Loading…</p>
+  {:else if !$token}
+    <SignIn {notice} />
+  {:else if active === 'wallpaper'}
     <Wallpaper />
   {:else if active === 'settings'}
     <Settings />
@@ -89,6 +125,14 @@
   .status {
     margin-left: auto;
     color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .status.down {
+    color: var(--warn);
+  }
+
+  .signout {
     font-size: 0.8rem;
   }
 

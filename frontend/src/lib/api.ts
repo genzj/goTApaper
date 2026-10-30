@@ -5,11 +5,13 @@
 // means every capability the UI has is reachable from a terminal too, by
 // construction rather than by discipline.
 //
-// Authentication is always the session cookie set by the one-time ticket
-// handshake, and this module never handles a credential itself. That holds in
-// the native webview too, because the window is pointed at the API server's
-// own /ui/ rather than at a bundled asset server: one origin, one mechanism,
-// and a token that JavaScript cannot read in either case.
+// Every request carries the bearer token from auth.ts. A 401 means the token
+// is no longer valid -- the daemon was reinstalled, or its token file deleted
+// -- so the interface signs out and asks again rather than showing a page of
+// errors.
+
+import { get } from 'svelte/store'
+import { signOut, token } from './auth'
 
 /** Stands in for a secret the server will not disclose. */
 export const REDACTED = '********'
@@ -91,6 +93,10 @@ export interface WatermarkLayer {
 }
 
 export interface HistoryEntry {
+  /** When the picture was first applied. Equal to downloadTime unless re-applied. */
+  firstAppliedTime: number
+  /** How many times the picture has been applied, re-applications included. */
+  timesApplied: number
   id: number
   channelName: string
   channelType?: string
@@ -112,7 +118,11 @@ export interface HistoryPage {
   offset: number
 }
 
-export interface CurrentWallpaper {
+/**
+ * The wallpaper goTApaper applied most recently. Not necessarily what is on
+ * the desktop now: the user may have changed it by hand since.
+ */
+export interface LastApplied {
   entry?: HistoryEntry
   path?: string
   size?: number
@@ -157,6 +167,35 @@ export interface RefreshResult {
   credit?: string
 }
 
+export type DownloadState = 'idle' | 'downloading'
+
+export interface DownloadJob {
+  kind: 'refresh' | 'reapply'
+  channels?: string[]
+  force?: boolean
+  entryId?: number
+  scheduled?: boolean
+}
+
+export interface DownloadOutcome {
+  job: DownloadJob
+  result: RefreshResult
+  error?: string
+  finishedAt: number
+}
+
+export interface DownloadStatus {
+  state: DownloadState
+  job?: DownloadJob
+  startedAt?: number
+  last?: DownloadOutcome
+}
+
+export interface Status {
+  version?: string
+  download: DownloadStatus
+}
+
 /** An error carrying the server's own message and any structured detail. */
 export class ApiError extends Error {
   constructor(
@@ -172,6 +211,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * authorizedFetch is fetch with the bearer token, for responses that are not
+ * JSON: images and the event stream. A 401 signs out.
+ */
+export async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  const current = get(token)
+  if (current) headers.set('Authorization', `Bearer ${current}`)
+
+  const resp = await fetch(`/api/v1${path}`, { ...init, headers })
+  if (resp.status === 401) signOut()
+  return resp
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -182,12 +235,10 @@ async function request<T>(
     headers['Content-Type'] = 'application/json'
   }
 
-  const resp = await fetch(`/api/v1${path}`, {
+  const resp = await authorizedFetch(path, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
-    // Sends the session cookie in the browser case.
-    credentials: 'same-origin',
   })
 
   if (!resp.ok) {
@@ -210,23 +261,6 @@ async function request<T>(
   if (resp.status === 204) return undefined as T
   const text = await resp.text()
   return (text ? JSON.parse(text) : undefined) as T
-}
-
-/** imageURL builds a URL for an image route, for use in an <img> src. */
-export function imageURL(path: string): string {
-  return `/api/v1${path}`
-}
-
-/**
- * eventsURL is the server-sent event stream.
- *
- * Same-origin, so EventSource sends the session cookie by itself. This is why
- * the webview is pointed at the server's own /ui/: EventSource cannot set an
- * Authorization header, and the alternative would have been a token in the
- * query string.
- */
-export function eventsURL(): string {
-  return '/api/v1/events'
 }
 
 export const api = {
@@ -265,14 +299,17 @@ export const api = {
     request<void>('DELETE', `/watermark-layers/${id}`),
 
   // Wallpaper
-  currentWallpaper: () => request<CurrentWallpaper>('GET', '/wallpaper/current'),
-  refresh: (channels: string[] = []) =>
-    request<RefreshResult>('POST', '/refresh', { channels }),
+  lastApplied: () => request<LastApplied>('GET', '/wallpaper/last-applied'),
+  status: () => request<Status>('GET', '/status'),
+  // Both start a download in the background and return at once; how it went
+  // arrives as a download-finished event. A 409 means one is already running.
+  refresh: (channels: string[] = [], force = false) =>
+    request<DownloadStatus>('POST', '/refresh', { channels, force }),
 
   // History
   history: (limit: number, offset: number) =>
     request<HistoryPage>('GET', `/history?limit=${limit}&offset=${offset}`),
-  reapply: (id: number) => request<RefreshResult>('POST', `/history/${id}/reapply`),
+  reapply: (id: number) => request<DownloadStatus>('POST', `/history/${id}/reapply`),
   deleteHistoryEntry: (id: number) => request<void>('DELETE', `/history/${id}`),
   pruneHistory: (keepAtMost: number, dryRun: boolean) =>
     request<SweepResult>('POST', '/history/prune', { keepAtMost, dryRun }),

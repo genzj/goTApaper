@@ -15,6 +15,11 @@ const (
 	// running daemon without being told the port.
 	EndpointFileName = "api-endpoint"
 
+	// PortFileName remembers the last port an ephemeral bind got, so the next
+	// start can ask for it again. Unlike the endpoint file it outlives the
+	// daemon, which is the point.
+	PortFileName = "api-port"
+
 	// BasePath prefixes every route.
 	BasePath = "/api/v1"
 )
@@ -24,6 +29,9 @@ func TokenPath(appDir string) string { return filepath.Join(appDir, TokenFileNam
 
 // EndpointPath returns the endpoint file's location.
 func EndpointPath(appDir string) string { return filepath.Join(appDir, EndpointFileName) }
+
+// PortPath returns the remembered port file's location.
+func PortPath(appDir string) string { return filepath.Join(appDir, PortFileName) }
 
 // ErrorBody is the shape every failing route returns. Clients decode it to
 // recover the server's own message rather than inventing their own.

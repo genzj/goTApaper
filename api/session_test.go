@@ -1,10 +1,13 @@
 package api
 
 import (
+	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 )
 
@@ -95,90 +98,115 @@ func TestExpiredTicketsAreNotRetainedForever(t *testing.T) {
 	}
 }
 
-func TestSessionHandlerExchangesATicketForACookie(t *testing.T) {
-	tickets := newTicketStore()
-	ticket, _ := tickets.Mint()
-	h := &sessionHandler{tickets: tickets, token: testToken}
-
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, uiSessionPath+"?ticket="+ticket, nil))
-
-	if rec.Code != http.StatusFound {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusFound)
-	}
-	// Redirected to a clean URL, so the ticket does not linger in the address
-	// bar or in history.
-	if got := rec.Header().Get("Location"); got != uiPath {
-		t.Errorf("Location = %q, want %q", got, uiPath)
-	}
-
-	cookies := rec.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("set %d cookies, want 1", len(cookies))
-	}
-	c := cookies[0]
-	if c.Name != SessionCookieName {
-		t.Errorf("cookie name = %q", c.Name)
-	}
-	if c.Value != testToken {
-		t.Errorf("cookie does not carry the token")
-	}
-	if !c.HttpOnly {
-		t.Error("the session cookie is not HttpOnly, so a scripting bug could read the token")
-	}
-	if c.SameSite != http.SameSiteStrictMode {
-		t.Error("the session cookie is not SameSite=Strict")
-	}
-}
-
-func TestSessionHandlerRejectsAMissingOrSpentTicket(t *testing.T) {
-	tickets := newTicketStore()
-	ticket, _ := tickets.Mint()
-	h := &sessionHandler{tickets: tickets, token: testToken}
-
-	for _, query := range []string{"", "?ticket=", "?ticket=wrong"} {
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, uiSessionPath+query, nil))
-		if rec.Code != http.StatusForbidden {
-			t.Errorf("%q: status = %d, want 403", query, rec.Code)
-		}
-		if len(rec.Result().Cookies()) != 0 {
-			t.Errorf("%q: a cookie was set without a valid ticket", query)
-		}
-	}
-
-	// Spend it, then try again.
-	ok := httptest.NewRecorder()
-	h.ServeHTTP(ok, httptest.NewRequest(http.MethodGet, uiSessionPath+"?ticket="+ticket, nil))
-	replay := httptest.NewRecorder()
-	h.ServeHTTP(replay, httptest.NewRequest(http.MethodGet, uiSessionPath+"?ticket="+ticket, nil))
-	if replay.Code != http.StatusForbidden {
-		t.Errorf("replayed ticket: status = %d, want 403", replay.Code)
-	}
-}
-
-func TestSessionCookieAuthenticatesTheAPI(t *testing.T) {
-	h, _ := newTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
-	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: testToken})
-
+func exchange(t *testing.T, h http.Handler, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, ticketExchangePath, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
+	return rec
+}
 
-	// A browser cannot set an Authorization header on a navigation, so the
-	// cookie has to work as an equivalent credential.
+func TestTicketExchangeReturnsTheTokenOnce(t *testing.T) {
+	handlers, _ := newTestHandlers(t, nil)
+	tickets := newTicketStore()
+	h := testRoutes(handlers, tickets)
+	ticket, _ := tickets.Mint()
+
+	// No Authorization header: this is how the interface gets one.
+	rec := exchange(t, h, `{"ticket":"`+ticket+`"}`)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body ticketExchangeBody
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Token != testToken {
+		t.Fatalf("token = %q, want the API token", body.Token)
+	}
+	// The response carries a credential, so nothing may keep a copy.
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+
+	// Single-use: the URL the browser was launched with is now worthless.
+	if rec := exchange(t, h, `{"ticket":"`+ticket+`"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("replayed ticket: status = %d, want 403", rec.Code)
 	}
 }
 
-func TestAWrongSessionCookieIsRejected(t *testing.T) {
+func TestTicketExchangeRejectsAnythingButAValidTicket(t *testing.T) {
 	h, _ := newTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
-	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "not-the-token"})
+	for _, body := range []string{`{}`, `{"ticket":""}`, `{"ticket":"guess"}`} {
+		rec := exchange(t, h, body)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s: status = %d, want 403", body, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), testToken) {
+			t.Errorf("%s: the token leaked in a refusal", body)
+		}
+	}
+}
 
+func TestSessionURLCarriesTheTicketInTheFragment(t *testing.T) {
+	srv := &Server{tickets: newTicketStore(), listener: fakeListener{}}
+
+	url, err := srv.SessionURL()
+	if err != nil {
+		t.Fatalf("SessionURL: %v", err)
+	}
+	// A fragment is never sent to the server and is stripped from Referer,
+	// which is the point: the ticket stays out of request logs.
+	prefix := "http://127.0.0.1:8080/ui/#ticket="
+	if !strings.HasPrefix(url, prefix) {
+		t.Fatalf("SessionURL = %q, want the ticket after %q", url, prefix)
+	}
+	if !srv.tickets.Redeem(strings.TrimPrefix(url, prefix)) {
+		t.Fatal("the ticket in the URL is not redeemable")
+	}
+}
+
+func TestInterfaceAssetsAreServedWithoutAToken(t *testing.T) {
+	SetUIAssets(fstest.MapFS{
+		"index.html":    {Data: []byte("<!doctype html><title>t</title>")},
+		"assets/app.js": {Data: []byte("console.log(1)")},
+	})
+	t.Cleanup(func() { SetUIAssets(nil) })
+	h, _ := newTestServer(t)
+
+	// The page has to load before it can ask for the token. It holds no
+	// secrets: everything it shows comes from API calls that carry the token.
+	for _, path := range []string{"/ui/", "/ui/assets/app.js"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200", path, rec.Code)
+		}
+	}
+}
+
+func TestAPIStillRequiresTheToken(t *testing.T) {
+	h, _ := newTestServer(t)
+
+	// Opening up the assets must not have opened up anything else.
+	for _, path := range []string{"/api/v1/settings", "/api/v1/status", "/api/v1/events"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s without a token: status = %d, want 401", path, rec.Code)
+		}
+	}
+}
+
+func TestACookieIsNotACredential(t *testing.T) {
+	h, _ := newTestServer(t)
+
+	// The interface sends the token as a bearer header. A cookie would be
+	// sent by the browser on its own, which is what CSRF exploits.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+	req.AddCookie(&http.Cookie{Name: "gotapaper_session", Value: testToken})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -187,18 +215,33 @@ func TestAWrongSessionCookieIsRejected(t *testing.T) {
 	}
 }
 
-func TestAnExplicitBearerTokenWinsOverAStaleCookie(t *testing.T) {
-	h, _ := newTestServer(t)
+func TestRequestsForAnotherHostAreRejected(t *testing.T) {
+	handlers, _ := newTestHandlers(t, nil)
+	// The raw routes, without the test shim that addresses requests to
+	// loopback.
+	h := handlers.routes(testToken, newTicketStore())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "stale"})
+	// A DNS-rebinding page reaches 127.0.0.1 under the attacker's name. Even
+	// the open routes must refuse it, or it could read the assets and probe
+	// the ticket exchange as if it were this application.
+	for _, path := range []string{"/ui/", "/api/v1/healthz", "/api/v1/settings"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Host = "rebind.attacker.example:8080"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s for a foreign host: status = %d, want 403", path, rec.Code)
+		}
+	}
 
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: a stale cookie shadowed a valid header", rec.Code)
+	for _, host := range []string{"127.0.0.1:8080", "localhost:8080", "[::1]:8080"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/healthz", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("healthz for %s: status = %d, want 200", host, rec.Code)
+		}
 	}
 }
 
@@ -263,12 +306,27 @@ func TestCrossOriginReadsAreStillAllowed(t *testing.T) {
 	}
 }
 
-func TestTrimTicketKeepsCredentialsOutOfTheLog(t *testing.T) {
-	got := trimTicket("/ui/session?ticket=super-secret-value")
-	if strings.Contains(got, "super-secret-value") {
-		t.Fatalf("trimTicket leaked the ticket: %q", got)
+func TestTicketExchangeRefusesACrossOriginPost(t *testing.T) {
+	handlers, _ := newTestHandlers(t, nil)
+	tickets := newTicketStore()
+	h := testRoutes(handlers, tickets)
+	ticket, _ := tickets.Mint()
+
+	req := httptest.NewRequest(http.MethodPost, ticketExchangePath,
+		strings.NewReader(`{"ticket":"`+ticket+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
 	}
-	if got := trimTicket("/api/v1/settings"); got != "/api/v1/settings" {
-		t.Fatalf("trimTicket altered a URL with no ticket: %q", got)
-	}
+}
+
+// fakeListener reports a fixed address, for building URLs without binding.
+type fakeListener struct{ net.Listener }
+
+func (fakeListener) Addr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP(LoopbackHost), Port: 8080}
 }

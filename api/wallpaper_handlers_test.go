@@ -202,7 +202,7 @@ func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRec
 
 func TestReapplyRouteStartsInTheBackground(t *testing.T) {
 	handlers, s := newTestHandlers(t, nil)
-	h := handlers.routes(testToken, newTicketStore())
+	h := testRoutes(handlers, newTicketStore())
 	ids := seedHistory(t, s, 1)
 
 	// Accepted, not OK: the request starts the download and returns, rather
@@ -235,7 +235,7 @@ func TestReapplyRouteRejectsAMissingEntryUpFront(t *testing.T) {
 func TestDownloadsAreRefusedWhileOneIsRunning(t *testing.T) {
 	gate := make(chan struct{})
 	handlers, s := newTestHandlers(t, gate)
-	h := handlers.routes(testToken, newTicketStore())
+	h := testRoutes(handlers, newTicketStore())
 	ids := seedHistory(t, s, 1)
 
 	if rec := post(t, h, "/api/v1/refresh", ""); rec.Code != http.StatusAccepted {
