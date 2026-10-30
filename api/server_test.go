@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/genzj/goTApaper/api/wire"
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config/store/sqlite"
 	"github.com/genzj/goTApaper/service"
@@ -161,4 +162,68 @@ func startRealServer(t *testing.T) (*Server, string) {
 		srv.Shutdown(ctx)
 	})
 	return srv, dir
+}
+
+func TestAnEphemeralPortIsReusedOnTheNextStart(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := listen(dir, 0)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	port := first.Addr().(*net.TCPAddr).Port
+	first.Close()
+
+	// The interface's saved token is scoped to the origin, port included, so
+	// a restart has to come back on the same port for it to survive.
+	second, err := listen(dir, 0)
+	if err != nil {
+		t.Fatalf("listen again: %v", err)
+	}
+	defer second.Close()
+	if got := second.Addr().(*net.TCPAddr).Port; got != port {
+		t.Fatalf("second start got port %d, want the remembered %d", got, port)
+	}
+	if host := second.Addr().(*net.TCPAddr).IP.String(); host != LoopbackHost {
+		t.Fatalf("bound %s, want %s", host, LoopbackHost)
+	}
+}
+
+func TestATakenRememberedPortFallsBackToAFreshOne(t *testing.T) {
+	dir := t.TempDir()
+
+	held, err := listen(dir, 0)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer held.Close()
+	taken := held.Addr().(*net.TCPAddr).Port
+
+	// Still bound, so the remembered port is unavailable.
+	other, err := listen(dir, 0)
+	if err != nil {
+		t.Fatalf("listen with the remembered port taken: %v", err)
+	}
+	defer other.Close()
+	if got := other.Addr().(*net.TCPAddr).Port; got == taken {
+		t.Fatal("bound the port another listener holds")
+	}
+}
+
+func TestAnUnbindableRememberedPortFallsBackToAFreshOne(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(wire.PortPath(dir), []byte("1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Port 1 is privileged and cannot be bound by an ordinary user, so the
+	// start must not fail just because that is what was remembered.
+	l, err := listen(dir, 0)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+	if got := l.Addr().(*net.TCPAddr).Port; got == 1 {
+		t.Fatal("bound a privileged port")
+	}
 }

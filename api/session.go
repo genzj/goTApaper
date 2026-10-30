@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -11,19 +12,18 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/genzj/goTApaper/api/wire"
 )
 
-// Where the browser-facing routes live. Outside wire.BasePath, because they
-// serve a user interface rather than the JSON API.
-const (
-	uiPath        = "/ui/"
-	uiSessionPath = "/ui/session"
-)
+// Where the interface lives. Outside wire.BasePath, because it serves a user
+// interface rather than the JSON API.
+const uiPath = "/ui/"
+
+// ticketExchangePath is where a ticket is traded for the API token.
+const ticketExchangePath = wire.BasePath + "/auth/ticket"
 
 const (
-	// SessionCookieName carries the API token for a browser.
-	SessionCookieName = "gotapaper_session"
-
 	// ticketTTL is how long a tray-minted ticket stays valid. Long enough for
 	// a browser to cold-start, short enough that one left in a shell history
 	// or a crash log is useless.
@@ -33,15 +33,18 @@ const (
 	ticketBytes = 32
 )
 
-// ticketStore issues the single-use tickets that hand a browser its session.
+// ticketStore issues the single-use tickets that hand the interface its token.
 //
-// A ticket exists because the alternatives are both worse. Putting the API
-// token in the URL writes a long-lived credential into browser history, the
-// Referer header and any shell the URL was pasted into. Serving the UI without
-// authentication at all would leave the user's provider API keys readable by
-// every local process. A ticket is a one-shot, short-lived stand-in: it is
-// exchanged for an HttpOnly cookie and immediately destroyed, so the URL that
-// leaks is already worthless.
+// The interface authenticates like any other client, with the bearer token,
+// which it keeps in the page's local storage. Opening it from the tray should
+// not mean asking the user to paste that token, so the tray opens the page
+// with a ticket instead, and the page trades it for the token.
+//
+// The ticket exists because the token itself must not ride in the URL. The
+// browser is launched with that URL on its command line, which any local
+// account can read with ps, and it is recorded in browser history. The token
+// is long-lived and the token file is 0600 precisely so other accounts cannot
+// read it; a spent, 60-second ticket in the same places is worthless.
 type ticketStore struct {
 	mu      sync.Mutex
 	tickets map[string]time.Time
@@ -58,7 +61,7 @@ func (t *ticketStore) Mint() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
-	// URL-safe, since this travels as a query parameter.
+	// URL-safe, since this travels in a URL fragment.
 	ticket := base64.RawURLEncoding.EncodeToString(raw)
 
 	t.mu.Lock()
@@ -109,59 +112,74 @@ func (t *ticketStore) expireLocked() {
 	}
 }
 
-// sessionHandler exchanges a ticket for a session cookie.
-type sessionHandler struct {
+// ticketExchange trades a ticket for the API token.
+//
+// It is unauthenticated, because it is how the interface *acquires* its
+// credential. That is not a hole: the ticket it demands is a single-use
+// 60-second secret with 256 bits of entropy, minted by this process and
+// handed only to a window or browser the tray opened.
+type ticketExchange struct {
 	tickets *ticketStore
 	token   string
 }
 
-func (s *sessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !s.tickets.Redeem(r.URL.Query().Get("ticket")) {
+// ticketExchangeBody is the request and the response.
+type ticketExchangeBody struct {
+	Ticket string `json:"ticket,omitempty"`
+	Token  string `json:"token,omitempty"`
+}
+
+func (e *ticketExchange) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body ticketExchangeBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+
+	if !e.tickets.Redeem(body.Ticket) {
 		// Logged at warning for the same reason a rejected token is: this is
 		// the user's only signal that something local is probing an interface
 		// that can read their API keys.
-		logrus.WithFields(logrus.Fields{
-			"path":   r.URL.Path,
-			"remote": r.RemoteAddr,
-		}).Warn("rejected a session request with no valid ticket")
-
+		logrus.WithField("remote", r.RemoteAddr).Warn(
+			"rejected a ticket exchange with no valid ticket",
+		)
 		writeError(w, http.StatusForbidden,
 			"this link is invalid or has expired; open the interface from the tray menu again")
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:  SessionCookieName,
-		Value: s.token,
-		Path:  "/",
-		// HttpOnly so a scripting bug in the UI cannot read the token;
-		// SameSite=Strict so another page in the same browser cannot drive the
-		// API with it. Secure is deliberately not set: this is plain HTTP on
-		// loopback, and setting it would stop the cookie being stored at all.
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int((12 * time.Hour).Seconds()),
-	})
-
-	// Redirect to a clean URL so the ticket does not stay in the address bar
-	// or in history, even though it has already been spent.
-	http.Redirect(w, r, uiPath, http.StatusFound)
+	// Never cached: the response carries the credential.
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, ticketExchangeBody{Token: e.token})
 }
 
-// SessionURL mints a ticket and returns the URL that opens the interface in a
-// browser with a session already established.
+// SessionURL mints a ticket and returns the URL that opens the interface
+// already signed in.
+//
+// The ticket travels in the fragment rather than the query string. A fragment
+// is never sent to the server, so it stays out of request logs, and it is
+// stripped from the Referer header; the page reads it, trades it, and removes
+// it from the address bar.
 func (s *Server) SessionURL() (string, error) {
 	ticket, err := s.tickets.Mint()
 	if err != nil {
 		return "", err
 	}
-	return "http://" + s.Addr() + uiSessionPath + "?ticket=" + url.QueryEscape(ticket), nil
+	return s.UIURL() + "#ticket=" + url.QueryEscape(ticket), nil
 }
 
-// UIURL is the interface's address for a client that already holds the token,
-// which is the case inside the native webview.
+// UIURL is the interface's address, for a client that will sign in by hand.
 func (s *Server) UIURL() string {
 	return "http://" + s.Addr() + uiPath
+}
+
+// isLoopbackHost reports whether a host, with or without a port, names this
+// machine's loopback interface.
+func isLoopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	return host == LoopbackHost || host == "localhost" || host == "::1"
 }
 
 // isLoopbackOrigin reports whether an Origin header belongs to this
@@ -177,16 +195,36 @@ func isLoopbackOrigin(origin string) bool {
 	if err != nil {
 		return false
 	}
-	host := parsed.Hostname()
-	return host == LoopbackHost || host == "localhost" || host == "::1"
+	return isLoopbackHost(parsed.Host)
+}
+
+// requireLoopbackHost rejects a request addressed to any name but loopback.
+//
+// The bind already keeps other machines out. This keeps out a DNS-rebinding
+// page: a site whose name the attacker re-points at 127.0.0.1 after the page
+// loads, so the browser treats our server as that site's own origin. Such a
+// request still names the attacker's host in its Host header. It matters now
+// that the interface's assets and the ticket exchange answer without a token.
+func requireLoopbackHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackHost(r.Host) {
+			logrus.WithFields(logrus.Fields{
+				"host": r.Host,
+				"path": r.URL.Path,
+			}).Warn("rejected a request for a host other than loopback")
+
+			writeError(w, http.StatusForbidden, "requests must be addressed to "+LoopbackHost)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireLoopbackOrigin rejects a cross-origin state-changing request.
 //
-// SameSite=Strict already stops a hostile page sending the session cookie, so
-// this is a second, explicit check rather than the only one: a browser that
-// mishandles SameSite, or a future route reached with the bearer token from a
-// page, still cannot drive a write.
+// With the token sent in a header rather than a cookie, a hostile page cannot
+// make an authenticated request at all. This stays as a second line, because
+// the ticket exchange accepts a POST without a token.
 func requireLoopbackOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -207,13 +245,4 @@ func requireLoopbackOrigin(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// trimTicket removes a ticket from a URL for logging, so a credential in
-// flight is never written to the log file.
-func trimTicket(rawURL string) string {
-	if idx := strings.Index(rawURL, "ticket="); idx >= 0 {
-		return rawURL[:idx] + "ticket=REDACTED"
-	}
-	return rawURL
 }

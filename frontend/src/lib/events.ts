@@ -1,28 +1,37 @@
 // The server-sent event stream, exposed as Svelte stores.
 //
-// One connection carries log lines, configuration changes and refresh
+// One connection carries log lines, configuration changes and download
 // progress, so a view subscribes to what it cares about rather than opening
 // its own socket.
+//
+// It is read with fetch rather than EventSource, because EventSource cannot
+// send an Authorization header and the stream needs the token like every
+// other API call. The format is still plain SSE, which is what makes
+// `curl /api/v1/events` show the same thing.
 
-import { readable, writable, type Readable } from 'svelte/store'
-import { eventsURL, type LogEntry, type RefreshResult } from './api'
+import { get, readable, writable, type Readable } from 'svelte/store'
+import { authorizedFetch, type DownloadJob, type DownloadOutcome, type LogEntry } from './api'
+import { token } from './auth'
 
 export const EVENT_LOG = 'log'
 export const EVENT_CONFIG_CHANGED = 'config-changed'
-export const EVENT_REFRESH_STARTED = 'refresh-started'
-export const EVENT_REFRESH_FINISHED = 'refresh-finished'
+export const EVENT_DOWNLOAD_STARTED = 'download-started'
+export const EVENT_DOWNLOAD_FINISHED = 'download-finished'
 
 /** How many log entries the live tail keeps in the page. */
 const TAIL_LIMIT = 1000
 
-/** True while the stream is connected. */
+/** How long to wait before reconnecting a dropped stream. */
+const RECONNECT_MS = 3000
+
+/** True while the stream to the daemon is connected. */
 export const connected = writable(false)
 
-/** True between a refresh starting and finishing, wherever it was started. */
-export const refreshing = writable(false)
+/** The download in progress, wherever it was started, or null. */
+export const downloading = writable<DownloadJob | null>(null)
 
-/** The last refresh result seen on the stream. */
-export const lastRefresh = writable<RefreshResult | null>(null)
+/** The last download to finish. */
+export const lastDownload = writable<DownloadOutcome | null>(null)
 
 /** Increments on every configuration change, so a view can reload on it. */
 export const configVersion = writable(0)
@@ -30,56 +39,101 @@ export const configVersion = writable(0)
 type Listener = (entry: LogEntry) => void
 const logListeners = new Set<Listener>()
 
-let source: EventSource | null = null
+let controller: AbortController | null = null
 let reconnectTimer: number | undefined
 
 /**
- * Opens the stream, reconnecting if it drops.
- *
- * EventSource reconnects on its own after a network error but gives up on an
- * HTTP error, which is what a restarted daemon on a new port looks like, so
- * the retry is explicit.
+ * connect opens the stream, reconnecting whenever it drops -- including
+ * across a daemon restart, which comes back on the same port.
  */
 export function connect(): void {
-  if (source) return
+  if (controller || !get(token)) return
 
-  source = new EventSource(eventsURL(), { withCredentials: true })
-
-  source.addEventListener('open', () => connected.set(true))
-
-  source.addEventListener('error', () => {
+  const current = new AbortController()
+  controller = current
+  void run(current).finally(() => {
     connected.set(false)
-    source?.close()
-    source = null
-    window.clearTimeout(reconnectTimer)
-    reconnectTimer = window.setTimeout(connect, 3000)
-  })
-
-  source.addEventListener(EVENT_LOG, (e) => {
-    const entry = parse<LogEntry>(e)
-    if (entry) logListeners.forEach((fn) => fn(entry))
-  })
-
-  source.addEventListener(EVENT_CONFIG_CHANGED, () => {
-    configVersion.update((n) => n + 1)
-  })
-
-  source.addEventListener(EVENT_REFRESH_STARTED, () => refreshing.set(true))
-
-  source.addEventListener(EVENT_REFRESH_FINISHED, (e) => {
-    refreshing.set(false)
-    const result = parse<RefreshResult>(e)
-    if (result) lastRefresh.set(result)
+    if (controller === current) controller = null
+    if (!current.signal.aborted) {
+      window.clearTimeout(reconnectTimer)
+      reconnectTimer = window.setTimeout(connect, RECONNECT_MS)
+    }
   })
 }
 
-function parse<T>(event: Event): T | null {
-  const data = (event as MessageEvent).data
-  if (typeof data !== 'string') return null
+/** disconnect closes the stream, for signing out. */
+export function disconnect(): void {
+  window.clearTimeout(reconnectTimer)
+  controller?.abort()
+  controller = null
+  connected.set(false)
+}
+
+async function run(current: AbortController): Promise<void> {
+  let resp: Response
   try {
-    return JSON.parse(data) as T
+    resp = await authorizedFetch('/events', {
+      headers: { Accept: 'text/event-stream' },
+      signal: current.signal,
+    })
   } catch {
-    return null
+    return
+  }
+  if (!resp.ok || !resp.body) return
+  connected.set(true)
+
+  const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) return
+      buffer += value
+
+      // Frames end with a blank line. Anything after the last one is a frame
+      // still arriving.
+      let end: number
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        dispatch(buffer.slice(0, end))
+        buffer = buffer.slice(end + 2)
+      }
+    }
+  } catch {
+    // Aborted, or the connection dropped; connect's finally reconnects.
+  }
+}
+
+function dispatch(frame: string): void {
+  let type = 'message'
+  const data: string[] = []
+  for (const line of frame.split('\n')) {
+    if (line.startsWith(':')) continue // heartbeat comment
+    if (line.startsWith('event:')) type = line.slice(6).trim()
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+  }
+  if (data.length === 0) return
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(data.join('\n'))
+  } catch {
+    return
+  }
+
+  switch (type) {
+    case EVENT_LOG:
+      logListeners.forEach((fn) => fn(payload as LogEntry))
+      break
+    case EVENT_CONFIG_CHANGED:
+      configVersion.update((n) => n + 1)
+      break
+    case EVENT_DOWNLOAD_STARTED:
+      downloading.set(payload as DownloadJob)
+      break
+    case EVENT_DOWNLOAD_FINISHED:
+      downloading.set(null)
+      lastDownload.set(payload as DownloadOutcome)
+      break
   }
 }
 

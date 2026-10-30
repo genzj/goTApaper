@@ -7,10 +7,10 @@
 // a separate GUI process would be a second one.
 //
 // The window does not load a bundled asset server. It navigates to the API
-// server's own /ui/, through the one-time ticket handshake that sets a session
-// cookie. That choice is what keeps authentication to a single mechanism --
-// the webview and a browser are the same origin presenting the same cookie --
-// and means no API token is ever handed to JavaScript.
+// server's own /ui/ with a single-use ticket, which the page trades for the
+// API token, exactly as a browser opened from the tray does. The webview is
+// therefore just another API client: it needs no Wails bindings, and there is
+// one way to sign in rather than one per kind of window.
 package gui
 
 import (
