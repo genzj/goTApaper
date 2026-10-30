@@ -747,7 +747,7 @@ func agentRenderDir() string {
 func DescribeEntry(e PruneEntry) string {
 	return fmt.Sprintf(
 		"%s -> %s (%s)",
-		describePrunePath(e.OriginalURL), trimmed(e.CopyURL), HumanBytes(e.CopyBytes),
+		describePrunePath(e.OriginalURL), trimmed(e.CopyURL), util.HumanBytes(e.CopyBytes),
 	)
 }
 
@@ -778,9 +778,3 @@ func trimmed(raw string) string {
 	}
 	return filepath.Join("…", filepath.Base(filepath.Dir(path)), base)
 }
-
-// HumanBytes formats a byte count for the cleanup command's output.
-//
-// Kept as a name in this package, where its callers are, but implemented in
-// util now that the history prune and the log listing report byte counts too.
-func HumanBytes(n int64) string { return util.HumanBytes(n) }

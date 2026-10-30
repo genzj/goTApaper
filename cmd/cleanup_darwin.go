@@ -13,6 +13,7 @@ import (
 
 	"github.com/genzj/goTApaper/actor/setter"
 	"github.com/genzj/goTApaper/config"
+	"github.com/genzj/goTApaper/util"
 )
 
 var cleanupCmd = &cobra.Command{
@@ -87,7 +88,7 @@ func runCleanup(cmd *cobra.Command, _ []string) {
 		len(stats.Entries), entryWord(len(stats.Entries)),
 		len(stats.Renders), bitmapWord(len(stats.Renders)),
 		len(stats.OrphanCopies), copyWord(len(stats.OrphanCopies)),
-		setter.HumanBytes(stats.TotalBytes),
+		util.HumanBytes(stats.TotalBytes),
 	)
 }
 
@@ -104,7 +105,7 @@ func printPrunePlan(plan setter.PruneStats, allPhotos bool) {
 		if len(e.Renders) > 0 {
 			fmt.Printf(
 				"              + %d rendered %s (%s)\n",
-				len(e.Renders), bitmapWord(len(e.Renders)), setter.HumanBytes(e.RenderBytes),
+				len(e.Renders), bitmapWord(len(e.Renders)), util.HumanBytes(e.RenderBytes),
 			)
 		}
 	}
@@ -114,12 +115,12 @@ func printPrunePlan(plan setter.PruneStats, allPhotos bool) {
 
 	fmt.Printf(
 		"\nRendered bitmaps to remove: %d (%s)\n",
-		len(plan.Renders), setter.HumanBytes(plan.RenderBytes),
+		len(plan.Renders), util.HumanBytes(plan.RenderBytes),
 	)
 	if n := len(plan.OrphanRenders); n > 0 {
 		fmt.Printf(
 			"  including %d matching no remaining entry (%s)\n",
-			n, setter.HumanBytes(plan.OrphanBytes),
+			n, util.HumanBytes(plan.OrphanBytes),
 		)
 	}
 	if plan.RendersKept > 0 {
@@ -134,7 +135,7 @@ func printPrunePlan(plan setter.PruneStats, allPhotos bool) {
 	if n := len(plan.OrphanCopies); n > 0 {
 		fmt.Printf(
 			"\nUnreferenced cached copies to remove: %d (%s)\n",
-			n, setter.HumanBytes(plan.OrphanCopyBytes),
+			n, util.HumanBytes(plan.OrphanCopyBytes),
 		)
 	}
 
@@ -156,7 +157,7 @@ func printPrunePlan(plan setter.PruneStats, allPhotos bool) {
 			)
 		}
 	}
-	fmt.Printf("\nTotal reclaimed: %s\n", setter.HumanBytes(plan.TotalBytes))
+	fmt.Printf("\nTotal reclaimed: %s\n", util.HumanBytes(plan.TotalBytes))
 }
 
 func entryWord(n int) string {

@@ -5,11 +5,7 @@ import (
 	"strings"
 )
 
-// HumanBytes formats a byte count for display.
-//
-// It lives here rather than beside its first caller because three commands now
-// report reclaimed or consumed bytes -- the macOS cache cleanup, the history
-// prune and the log file listing -- and two of them are not platform-specific.
+// HumanBytes formats a byte count for display, in binary units.
 func HumanBytes(n int64) string {
 	const unit = 1024
 	if n < unit {
