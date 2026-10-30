@@ -230,21 +230,21 @@ func TestEventHubCancelIsIdempotent(t *testing.T) {
 func TestWriteEventEncodesOneFramePerEvent(t *testing.T) {
 	rec := httptest.NewRecorder()
 
-	if !writeEvent(rec, rec, Event{Type: EventRefreshFinished, Data: map[string]string{
+	if !writeEvent(rec, rec, Event{Type: EventDownloadFinished, Data: map[string]string{
 		"channel": "bing",
 	}}) {
 		t.Fatal("writeEvent reported a dead connection")
 	}
 
 	body := rec.Body.String()
-	if !strings.HasPrefix(body, "event: "+EventRefreshFinished+"\n") {
+	if !strings.HasPrefix(body, "event: "+EventDownloadFinished+"\n") {
 		t.Errorf("frame does not start with the event name: %q", body)
 	}
 	if !strings.HasSuffix(body, "\n\n") {
 		t.Errorf("frame is not terminated by a blank line: %q", body)
 	}
 	// The payload must stay on one line, or a client sees a truncated frame.
-	data := strings.TrimPrefix(body, "event: "+EventRefreshFinished+"\n")
+	data := strings.TrimPrefix(body, "event: "+EventDownloadFinished+"\n")
 	data = strings.TrimSuffix(data, "\n\n")
 	if strings.Count(data, "\n") != 0 {
 		t.Errorf("payload spans multiple lines: %q", data)

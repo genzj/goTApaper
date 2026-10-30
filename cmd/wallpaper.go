@@ -14,25 +14,30 @@ import (
 
 var wallpaperCmd = &cobra.Command{
 	Use:   "wallpaper",
-	Short: "Inspect the wallpaper now on the desktop",
+	Short: "Inspect the wallpaper goTApaper applied",
 }
 
-var wallpaperCurrentCmd = &cobra.Command{
-	Use:   "current",
-	Short: "Show the wallpaper now on the desktop",
+var wallpaperLastAppliedCmd = &cobra.Command{
+	Use:   "last-applied",
+	Short: "Show the wallpaper goTApaper applied most recently",
+	Long: `Show the wallpaper goTApaper applied most recently.
+
+This is what goTApaper last set, not necessarily what is on the desktop now:
+it cannot see the desktop, and the wallpaper may have been changed by hand
+since.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		current, err := wallpaperService().Current()
+		last, err := wallpaperService().LastApplied()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
 		if writeImage {
-			streamCurrentImage()
+			streamLastAppliedImage()
 			return
 		}
 
-		if current.Entry == nil {
+		if last.Entry == nil {
 			fmt.Println("no wallpaper has been applied yet")
 			return
 		}
@@ -43,21 +48,21 @@ var wallpaperCurrentCmd = &cobra.Command{
 				fmt.Fprintf(w, "%s:\t%s\n", label, value)
 			}
 		}
-		row("Title", current.Entry.Title)
-		row("Credit", current.Entry.Credit)
-		row("Channel", current.Entry.ChannelName)
-		row("Applied", time.Unix(current.Entry.DownloadTime, 0).Local().String())
-		row("Source", current.Entry.URL)
-		row("File", current.Path)
-		if current.Exists {
-			row("Size", util.HumanBytes(current.Size))
-			if current.Width > 0 {
-				row("Dimensions", fmt.Sprintf("%d x %d", current.Width, current.Height))
+		row("Title", last.Entry.Title)
+		row("Credit", last.Entry.Credit)
+		row("Channel", last.Entry.ChannelName)
+		row("Applied", time.Unix(last.Entry.DownloadTime, 0).Local().String())
+		row("Source", last.Entry.URL)
+		row("File", last.Path)
+		if last.Exists {
+			row("Size", util.HumanBytes(last.Size))
+			if last.Width > 0 {
+				row("Dimensions", fmt.Sprintf("%d x %d", last.Width, last.Height))
 			}
 		} else {
 			// Worth saying rather than omitting: the metadata describes a
 			// picture whose file has since been replaced or removed.
-			row("File", current.Path+" (missing)")
+			row("File", last.Path+" (missing)")
 		}
 		w.Flush()
 	},
@@ -66,17 +71,17 @@ var wallpaperCurrentCmd = &cobra.Command{
 var writeImage bool
 
 func init() {
-	wallpaperCurrentCmd.Flags().BoolVar(
+	wallpaperLastAppliedCmd.Flags().BoolVar(
 		&writeImage, "image", false, "write the wallpaper image to stdout instead of its metadata",
 	)
-	wallpaperCmd.AddCommand(wallpaperCurrentCmd)
+	wallpaperCmd.AddCommand(wallpaperLastAppliedCmd)
 	RootCmd.AddCommand(wallpaperCmd)
 }
 
-// streamCurrentImage copies the wallpaper file to stdout, so it can be piped
+// streamLastAppliedImage copies the wallpaper file to stdout, so it can be piped
 // to a viewer or redirected to a file.
-func streamCurrentImage() {
-	file, _, err := wallpaperService().CurrentImage()
+func streamLastAppliedImage() {
+	file, _, err := wallpaperService().LastAppliedImage()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

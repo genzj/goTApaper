@@ -126,6 +126,9 @@ func TestAppendWallpaperHistoryRoundTripsEveryField(t *testing.T) {
 		t.Fatalf("AppendWallpaperHistory: %v", err)
 	}
 	want.ID = id
+	// Applied once: first and last application are the same moment.
+	want.FirstAppliedTime = want.DownloadTime
+	want.TimesApplied = 1
 
 	got, err := s.WallpaperHistoryEntryByID(id)
 	if err != nil {
@@ -392,5 +395,92 @@ func TestWallpaperHistoryBeyondWithNoCapPreviewsNothing(t *testing.T) {
 	}
 	if len(paths) != 0 {
 		t.Fatalf("WallpaperHistoryBeyond(0) = %v, want nothing", paths)
+	}
+}
+
+func TestMarkReappliedUpdatesTheEntryInsteadOfDuplicatingIt(t *testing.T) {
+	s := openMemory(t)
+
+	old := appendEntry(t, s, "bing", 100)
+	appendEntry(t, s, "ng", 200)
+
+	if err := s.MarkReapplied(old, 300, "/app/wallpaper.jpeg", ""); err != nil {
+		t.Fatalf("MarkReapplied: %v", err)
+	}
+
+	// Still two entries: the picture was applied again, not added again.
+	count, _ := s.WallpaperHistoryCount()
+	if count != 2 {
+		t.Fatalf("WallpaperHistoryCount() = %d, want 2", count)
+	}
+
+	got, err := s.WallpaperHistoryEntryByID(old)
+	if err != nil {
+		t.Fatalf("WallpaperHistoryEntryByID: %v", err)
+	}
+	if got.FirstAppliedTime != 100 || got.DownloadTime != 300 {
+		t.Errorf("first/last applied = %d/%d, want 100/300",
+			got.FirstAppliedTime, got.DownloadTime)
+	}
+	if got.TimesApplied != 2 {
+		t.Errorf("TimesApplied = %d, want 2", got.TimesApplied)
+	}
+	if got.FilePath != "/app/wallpaper.jpeg" {
+		t.Errorf("FilePath = %q", got.FilePath)
+	}
+	// An empty thumbPath keeps the existing thumbnail: it is the same picture.
+	if got.ThumbPath != "/thumbs/bing.jpg" {
+		t.Errorf("ThumbPath = %q, want the original kept", got.ThumbPath)
+	}
+
+	// It is now the newest entry, so the history lists it first and pruning
+	// keeps it as recently used.
+	list, _ := s.WallpaperHistory(0, 0)
+	if list[0].ID != old {
+		t.Errorf("newest entry = %d, want the re-applied %d", list[0].ID, old)
+	}
+	url, _ := s.LastAppliedURL("bing")
+	if url != "https://example.test/bing" {
+		t.Errorf("LastAppliedURL = %q", url)
+	}
+}
+
+func TestMarkReappliedKeepsTheFirstTimeAcrossReapplications(t *testing.T) {
+	s := openMemory(t)
+	id := appendEntry(t, s, "bing", 100)
+
+	for _, at := range []int64{200, 300} {
+		if err := s.MarkReapplied(id, at, "", ""); err != nil {
+			t.Fatalf("MarkReapplied(%d): %v", at, err)
+		}
+	}
+
+	got, _ := s.WallpaperHistoryEntryByID(id)
+	if got.FirstAppliedTime != 100 || got.DownloadTime != 300 || got.TimesApplied != 3 {
+		t.Fatalf("first/last/times = %d/%d/%d, want 100/300/3",
+			got.FirstAppliedTime, got.DownloadTime, got.TimesApplied)
+	}
+}
+
+func TestMarkReappliedCanReplaceAMissingThumbnail(t *testing.T) {
+	s := openMemory(t)
+	id := appendEntry(t, s, "bing", 100)
+
+	if err := s.MarkReapplied(id, 200, "", "/thumbs/new.jpg"); err != nil {
+		t.Fatalf("MarkReapplied: %v", err)
+	}
+	got, _ := s.WallpaperHistoryEntryByID(id)
+	if got.ThumbPath != "/thumbs/new.jpg" {
+		t.Fatalf("ThumbPath = %q, want the replacement", got.ThumbPath)
+	}
+}
+
+func TestMarkReappliedReportsADeletedEntry(t *testing.T) {
+	s := openMemory(t)
+
+	// The entry can go while it is being re-applied; the caller then records
+	// the picture afresh, so this has to be distinguishable.
+	if err := s.MarkReapplied(404, 200, "", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("MarkReapplied(missing) = %v, want ErrNotFound", err)
 	}
 }

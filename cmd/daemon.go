@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/genzj/goTApaper/api"
-	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/frontend"
 	"github.com/genzj/goTApaper/gui"
@@ -55,16 +54,6 @@ var guiCmd = &cobra.Command{
 	},
 }
 
-const (
-	stagePreRefresh = iota
-	stagePostRefresh
-)
-
-type cycleUpdateCallback func(int, *channel.PictureMeta, error)
-type nextCycleChannel = chan []string
-type nextCycleWaitChannel = <-chan []string
-type nextCycleTrigger func(channels []string)
-
 func init() {
 	daemonCmd.PersistentFlags().BoolVar(
 		&apiEnabled, "api", true,
@@ -81,22 +70,23 @@ func init() {
 	RootCmd.AddCommand(guiCmd)
 }
 
-func initDaemon(nextCycleCh nextCycleWaitChannel, callback cycleUpdateCallback) {
+// runSchedule refreshes every daemon.interval seconds, or sooner when woken.
+//
+// It only ever schedules: the downloader decides whether that starts a
+// download now or after the one in flight, so the timer, a configuration
+// change, the tray and the API can never run two downloads at once.
+func runSchedule(wake <-chan struct{}, d *service.Downloader) {
 	go func() {
-		var channels []string = nil
 		for {
 			interval := config.GetInt(config.KeyDaemonInterval)
-			logrus.WithField("interval", interval).Debug("refresh over, going to sleep")
+			logrus.WithField("interval", interval).Debug("going to sleep until the next refresh")
 			select {
 			case <-time.After(time.Duration(interval) * time.Second):
 				logrus.WithField("interval", interval).Debug("awake from sleep")
-				channels = nil
-			case channels = <-nextCycleCh:
-				logrus.Debug("trigger next cycle before interval timeout")
+			case <-wake:
+				logrus.Debug("woken before the interval elapsed")
 			}
-			callback(stagePreRefresh, nil, nil)
-			meta, err := refresh(channels)
-			callback(stagePostRefresh, meta, err)
+			d.Schedule()
 		}
 	}()
 }
@@ -107,7 +97,7 @@ var apiServer *api.Server
 // startAPIServer brings up the localhost API. A failure is logged rather than
 // fatal: the daemon's job is to set wallpapers, and it should keep doing that
 // even if the configuration interface could not be opened.
-func startAPIServer() {
+func startAPIServer(d *service.Downloader) {
 	if !apiEnabled {
 		logrus.Debug("API server disabled")
 		return
@@ -119,11 +109,13 @@ func startAPIServer() {
 	api.SetUIAssets(frontend.MustAssets())
 
 	srv, err := api.Start(api.Options{
-		AppDir:    config.AppDir(),
-		Port:      config.GetInt(config.KeyAPIPort),
-		Config:    service.NewConfig(currentStore()),
-		Wallpaper: service.NewWallpaper(currentStore(), refresh, reapply),
-		Logs:      service.NewLogs(),
+		AppDir:     config.AppDir(),
+		Port:       config.GetInt(config.KeyAPIPort),
+		Config:     service.NewConfig(currentStore()),
+		Wallpaper:  service.NewWallpaper(currentStore()),
+		Downloader: d,
+		Logs:       service.NewLogs(),
+		Version:    Version,
 	})
 	if err != nil {
 		logrus.WithError(err).Error("cannot start the API server, continuing without it")
@@ -145,31 +137,40 @@ func publishConfigChange(key string) {
 	apiServer.PublishEvent(api.EventConfigChanged, map[string]string{"key": key})
 }
 
-// startRefreshLoop brings up the API server, the configuration observer and
-// the periodic refresh, and returns the trigger for an immediate one.
+// startRefreshLoop brings up the downloader, the API server, the
+// configuration observer and the periodic refresh, and starts the first
+// refresh. onChange, if set, hears every download start and finish.
 //
 // Shared by the windowed and headless paths, so the two cannot drift on what a
 // running daemon actually does.
-func startRefreshLoop(callback cycleUpdateCallback) nextCycleTrigger {
-	startAPIServer()
-
-	nextCycleCh := make(nextCycleChannel)
-
-	nextCycle := func(channels []string) {
-		nextCycleCh <- channels
+func startRefreshLoop(onChange func(service.DownloadEvent)) *service.Downloader {
+	d := service.NewDownloader(currentStore(), refresh, reapply)
+	if onChange != nil {
+		d.OnChange(onChange)
 	}
 
+	startAPIServer(d)
+
+	// Buffered and sent to without blocking: several changes in quick
+	// succession want one refresh, and an observer must never stall waiting
+	// for the schedule to come round, which it used to do for as long as a
+	// download took.
+	wake := make(chan struct{}, 1)
 	config.Observe("*", func(key string, old, new interface{}) {
 		logrus.WithField("key", key).WithField("old", old).WithField("new", new).Debug("config change triggers refresh")
 		publishConfigChange(key)
-		nextCycle(nil)
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
 	})
 
-	initDaemon(nextCycleWaitChannel(nextCycleCh), callback)
+	runSchedule(wake, d)
 	// Sweep once at startup, so a cap lowered while the daemon was stopped
 	// takes effect without waiting for the next refresh.
 	sweepHistory(logrus.WithField("stage", "startup"))
-	return nextCycle
+	d.Schedule()
+	return d
 }
 
 func onExit() {
@@ -229,15 +230,19 @@ func runWindowed() {
 
 		OnReady: func(tray *gui.Tray) {
 			// The refresh loop is started from here rather than before
-			// gui.Run, so the first callback cannot reach a tray that does not
-			// exist yet.
-			nextCycle := startRefreshLoop(trayCallback(tray))
-			trayRefresh = nextCycle
-			nextCycle(nil)
+			// gui.Run, so the first download cannot report to a tray that does
+			// not exist yet.
+			trayDownloader = startRefreshLoop(trayListener(tray))
 		},
 		Refresh: func(channels []string) {
-			if trayRefresh != nil {
-				trayRefresh(channels)
+			if trayDownloader == nil {
+				return
+			}
+			// Busy is not worth reporting: the tray disables its Refresh item
+			// while a download runs, so this only races a download that
+			// started a moment ago.
+			if err := trayDownloader.Refresh(channels, false); err != nil {
+				logrus.WithError(err).Debug("tray refresh not started")
 			}
 		},
 		OnExit: onExit,
@@ -248,41 +253,19 @@ func runWindowed() {
 	}
 }
 
-// trayRefresh triggers a refresh from the tray. Package-level because the tray
-// menu is built before the refresh loop it drives exists.
-var trayRefresh nextCycleTrigger
+// trayDownloader is what the tray's Refresh item drives. Package-level
+// because the tray menu is built before the refresh loop it drives exists.
+var trayDownloader *service.Downloader
 
-// trayCallback adapts the refresh loop's progress reports to the tray.
-func trayCallback(tray *gui.Tray) cycleUpdateCallback {
-	return func(stage int, meta *channel.PictureMeta, err error) {
-		tray.ShowPicture(meta, err)
-		tray.Refreshing(stage == stagePreRefresh)
-
-		// Also announced on the event stream, so an open interface shows
-		// progress for a refresh the tray started.
-		if apiServer == nil {
-			return
+// trayListener shows download progress in the tray. The event stream hears
+// the same downloads from the API server's own subscription.
+func trayListener(tray *gui.Tray) func(service.DownloadEvent) {
+	return func(e service.DownloadEvent) {
+		tray.Refreshing(!e.Finished)
+		if e.Finished {
+			tray.ShowPicture(e.Meta, e.Err)
 		}
-		if stage == stagePreRefresh {
-			apiServer.PublishEvent(api.EventRefreshStarted, nil)
-			return
-		}
-		apiServer.PublishEvent(api.EventRefreshFinished, refreshEventData(meta, err))
 	}
-}
-
-func refreshEventData(meta *channel.PictureMeta, err error) any {
-	data := map[string]string{}
-	if meta != nil {
-		data["channel"] = meta.ChannelKey
-		data["type"] = meta.Channel
-		data["title"] = meta.Title
-		data["credit"] = meta.Credit
-	}
-	if err != nil {
-		data["error"] = err.Error()
-	}
-	return data
 }
 
 // runHeadless runs the refresh loop with no tray and no window.
@@ -296,8 +279,7 @@ func runHeadless() {
 	stop := make(chan struct{})
 	installSignalHandler(stop)
 
-	nextCycle := startRefreshLoop(func(int, *channel.PictureMeta, error) {})
-	nextCycle(nil)
+	startRefreshLoop(nil)
 
 	<-stop
 }

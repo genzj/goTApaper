@@ -60,10 +60,9 @@ func reapply(entry store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
 		return nil, fmt.Errorf("no image at %s", entry.URL)
 	}
 
-	// Rebuilt from the stored row rather than reusing it, so the new history
-	// entry records this application rather than duplicating the old one's
-	// timestamp. The watermark templates read these fields, so they have to
-	// carry the original's title and credit.
+	// Rebuilt from the stored row, because the watermark templates read these
+	// fields and have to show the original's title and credit. The history
+	// entry itself is updated in place by applyPicture, not duplicated.
 	meta := &channel.PictureMeta{
 		Title:        entry.Title,
 		Caption:      entry.Caption,
@@ -78,7 +77,7 @@ func reapply(entry store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
 		meta.UploadTime = time.Unix(entry.UploadTime, 0)
 	}
 
-	return applyPicture(l, raw, img, meta, wallpaperSetter, layers)
+	return applyPicture(l, raw, img, meta, wallpaperSetter, layers, &entry)
 }
 
 // fetchPicture reads a recorded picture again, from the network or, for the

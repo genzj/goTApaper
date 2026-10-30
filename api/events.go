@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/genzj/goTApaper/service"
 )
 
 // Event types carried on the stream. Named constants so the server and its
@@ -18,10 +20,12 @@ const (
 	// EventConfigChanged reports a setting, channel or layer having changed,
 	// so a UI can reload rather than poll.
 	EventConfigChanged = "config-changed"
-	// EventRefreshStarted and EventRefreshFinished bracket a refresh, so a UI
-	// can show progress for work it did not start itself.
-	EventRefreshStarted  = "refresh-started"
-	EventRefreshFinished = "refresh-finished"
+	// EventDownloadStarted and EventDownloadFinished bracket every download
+	// -- a refresh or a reapply, from whoever asked -- so a UI can show
+	// progress for work it did not start itself, and learn how a request it
+	// did start turned out.
+	EventDownloadStarted  = "download-started"
+	EventDownloadFinished = "download-finished"
 )
 
 // heartbeatInterval is how often a comment frame is sent on an idle stream.
@@ -106,6 +110,27 @@ func (h *eventHub) Subscribers() int {
 // progress and configuration changes into the stream.
 func (s *Server) Events() interface{ Publish(Event) } {
 	return s.handlers.events
+}
+
+// publishDownload forwards the downloader's progress onto the stream.
+func (h *handlers) publishDownload(e service.DownloadEvent) {
+	if !e.Finished {
+		h.events.Publish(Event{Type: EventDownloadStarted, Data: e.Job})
+		return
+	}
+	// The same shape as DownloadStatus.Last, so a client has one decoder for
+	// both the event and the status it would otherwise poll.
+	outcome := service.Outcome{Job: e.Job, FinishedAt: time.Now().Unix()}
+	if e.Meta != nil {
+		outcome.Result = service.RefreshResult{
+			Channel: e.Meta.ChannelKey, Type: e.Meta.Channel,
+			Title: e.Meta.Title, Credit: e.Meta.Credit,
+		}
+	}
+	if e.Err != nil {
+		outcome.Error = e.Err.Error()
+	}
+	h.events.Publish(Event{Type: EventDownloadFinished, Data: outcome})
 }
 
 // PublishEvent is the convenience form of Events().Publish.

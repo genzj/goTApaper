@@ -68,20 +68,18 @@ func (h *handlers) historyThumbnail(w http.ResponseWriter, r *http.Request) {
 	serveFile(w, r, file, "image/jpeg")
 }
 
+// reapplyHistoryEntry starts downloading a recorded wallpaper again and
+// answers at once, for the same reason refresh does.
 func (h *handlers) reapplyHistoryEntry(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-
-	h.events.Publish(Event{Type: EventRefreshStarted})
-	result, err := h.wallpaper.Reapply(id)
-	h.events.Publish(Event{Type: EventRefreshFinished, Data: result})
-	if err != nil {
+	if err := h.downloader.Reapply(id); err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusAccepted, h.downloader.Status())
 }
 
 func (h *handlers) pruneHistory(w http.ResponseWriter, r *http.Request) {

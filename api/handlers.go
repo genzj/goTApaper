@@ -14,10 +14,12 @@ import (
 )
 
 type handlers struct {
-	config    *service.Config
-	wallpaper *service.Wallpaper
-	logs      *service.Logs
-	events    *eventHub
+	config     *service.Config
+	wallpaper  *service.Wallpaper
+	downloader *service.Downloader
+	logs       *service.Logs
+	events     *eventHub
+	version    string
 }
 
 // errorBody is the single error shape every failing route returns. It is
@@ -56,6 +58,12 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, err.Error())
 
 	case errors.Is(err, store.ErrExists):
+		writeError(w, http.StatusConflict, err.Error())
+
+	case errors.Is(err, service.ErrBusy):
+		// 409 rather than 429 or 503: nothing is wrong with the server or the
+		// rate of requests, the request conflicts with the download already
+		// under way. The client can retry once download-finished arrives.
 		writeError(w, http.StatusConflict, err.Error())
 
 	case errors.Is(err, config.ErrUnknownKey):

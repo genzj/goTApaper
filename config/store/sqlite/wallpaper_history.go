@@ -11,6 +11,7 @@ import (
 const wallpaperHistoryColumns = `id, channel_name, channel_type, url,
 	COALESCE(title, ''), COALESCE(caption, ''), COALESCE(credit, ''),
 	COALESCE(format, ''), COALESCE(upload_time, 0), download_time,
+	COALESCE(first_applied_time, download_time), times_applied,
 	COALESCE(file_path, ''), COALESCE(thumb_path, '')`
 
 // AppendWallpaperHistory records one applied wallpaper.
@@ -96,6 +97,31 @@ func (s *Store) WallpaperHistoryEntryByID(id int64) (store.WallpaperHistoryEntry
 		)
 	}
 	return e, err
+}
+
+// MarkReapplied records that an entry was applied again.
+//
+// The first application's time is kept by copying download_time into
+// first_applied_time on the first re-application only: COALESCE leaves a time
+// that is already there alone.
+func (s *Store) MarkReapplied(id, at int64, filePath, thumbPath string) error {
+	res, err := s.q().Exec(
+		`UPDATE wallpaper_history SET
+		     first_applied_time = COALESCE(first_applied_time, download_time),
+		     download_time = ?,
+		     times_applied = times_applied + 1,
+		     file_path = COALESCE(?, file_path),
+		     thumb_path = COALESCE(?, thumb_path)
+		 WHERE id = ?`,
+		at, nullIfEmpty(filePath), nullIfEmpty(thumbPath), id,
+	)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("%w: wallpaper history entry %d", store.ErrNotFound, id)
+	}
+	return nil
 }
 
 // LastAppliedURL returns the URL of the newest entry for a channel instance.
@@ -251,7 +277,8 @@ func scanWallpaperHistory(sc scanner) (store.WallpaperHistoryEntry, error) {
 	err := sc.Scan(
 		&e.ID, &e.ChannelName, &e.ChannelType, &e.URL,
 		&e.Title, &e.Caption, &e.Credit, &e.Format,
-		&e.UploadTime, &e.DownloadTime, &e.FilePath, &e.ThumbPath,
+		&e.UploadTime, &e.DownloadTime, &e.FirstAppliedTime, &e.TimesApplied,
+		&e.FilePath, &e.ThumbPath,
 	)
 	return e, err
 }
