@@ -6,7 +6,9 @@
     type ChannelView,
     type TemplateView,
     type WatermarkLayer,
+    toInstance,
   } from '../lib/api'
+  import { linesToMap, mapToLines } from '../lib/format'
   import { configVersion } from '../lib/events'
   import Field from '../lib/Field.svelte'
 
@@ -57,15 +59,18 @@
     const out: Record<string, string> = {}
     for (const spec of schemaFor(c.type)) {
       const value = c.effectiveOptions?.[spec.key] ?? c.options?.[spec.key]
-      out[spec.key] = value === undefined || value === null ? '' : String(value)
+      if (value === undefined || value === null) out[spec.key] = ''
+      else if (spec.kind === 'stringMap') out[spec.key] = mapToLines(value)
+      else out[spec.key] = String(value)
     }
     return out
   }
 
+
   async function toggleEnabled(c: ChannelView) {
     error = ''
     try {
-      await api.upsertChannel({ ...c, enabled: !c.enabled })
+      await api.upsertChannel({ ...toInstance(c), enabled: !c.enabled })
       await load()
     } catch (e) {
       error = message(e)
@@ -102,7 +107,7 @@
     }
 
     try {
-      await api.upsertChannel({ ...c, options })
+      await api.upsertChannel({ ...toInstance(c), options })
       await load()
     } catch (e) {
       error = message(e)
@@ -117,6 +122,8 @@
         return Number.parseFloat(raw)
       case 'bool':
         return raw === 'true'
+      case 'stringMap':
+        return linesToMap(raw)
       default:
         return raw
     }
@@ -237,8 +244,17 @@
     </div>
   {/each}
 
+  <!--
+    TODO: edit channel templates here -- create one, change its options, and
+    choose which template a channel inherits from. The API already supports
+    all of it (POST/PUT /channel-templates, a channel's templateName); only the
+    form is missing. Until then: "goTApaper config channel-template set".
+  -->
   <h2>Channel templates</h2>
-  <p class="muted">Reusable blocks of options that channels inherit from.</p>
+  <p class="muted">
+    Reusable blocks of options that channels inherit from. Editing them here is
+    not available yet; use <code>goTApaper config channel-template set</code>.
+  </p>
 
   {#if templates.length === 0}
     <p class="muted">No templates configured.</p>
@@ -260,8 +276,20 @@
     </table>
   {/if}
 
+  <!--
+    TODO: edit watermark layers here -- add, remove and reorder them, and set
+    each one's font, size, colour, position and template. The API supports it
+    (POST/PUT/DELETE /watermark-layers); only the form is missing, and there
+    is no CLI for it either, so for now it is "config export", edit the YAML,
+    "config import".
+  -->
   <h2>Watermark layers</h2>
-  <p class="muted">Text overlays drawn on the wallpaper, in this order.</p>
+  <p class="muted">
+    Text overlays drawn on the wallpaper, in this order. Only switching them on
+    and off is available here yet; to change one, edit the output of
+    <code>goTApaper config export</code> and load it back with
+    <code>goTApaper config import</code>.
+  </p>
 
   {#if layers.length === 0}
     <p class="muted">No watermark layers configured.</p>

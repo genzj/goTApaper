@@ -53,6 +53,16 @@ export interface ChannelView extends ChannelInstance {
   effectiveOptions: Record<string, unknown>
 }
 
+/**
+ * toInstance strips a channel as it was shown back to the channel as it is
+ * stored. The server rejects unknown fields -- so a misspelled one cannot
+ * look like a successful save -- and effectiveOptions is read-only output.
+ */
+export function toInstance(view: ChannelView): ChannelInstance {
+  const { effectiveOptions: _effective, ...instance } = view
+  return instance
+}
+
 export interface ChannelTypeInfo {
   name: string
   schema: { version: number; options: ValueSpec[] }
@@ -301,6 +311,9 @@ export const api = {
   // Wallpaper
   lastApplied: () => request<LastApplied>('GET', '/wallpaper/last-applied'),
   status: () => request<Status>('GET', '/status'),
+  // The daemon answers and then restarts, coming back on the same port; the
+  // event stream reconnects by itself.
+  restartDaemon: () => request<void>('POST', '/daemon/restart'),
   // Both start a download in the background and return at once; how it went
   // arrives as a download-finished event. A 409 means one is already running.
   refresh: (channels: string[] = [], force = false) =>
