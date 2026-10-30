@@ -113,7 +113,15 @@ func (s *Server) PublishEvent(eventType string, data any) {
 	s.handlers.events.Publish(Event{Type: eventType, Data: data})
 }
 
-// events streams server-sent events until the client disconnects.
+// registerEventRoutes serves the event stream: one stream carrying log lines,
+// configuration changes and refresh progress. A single endpoint because it
+// works unchanged in the webview, in a browser and under curl, which is what
+// keeps the UI from needing a transport the CLI does not have.
+func (h *handlers) registerEventRoutes(r *router) {
+	r.handle("GET", "/events", h.streamEvents)
+}
+
+// streamEvents streams server-sent events until the client disconnects.
 func (h *handlers) streamEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {

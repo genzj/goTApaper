@@ -150,60 +150,14 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	authed := http.NewServeMux()
 	r := &router{mux: authed, allowed: map[string][]string{}}
 
-	r.handle("GET", "/settings", h.listSettings)
-	r.handle("GET", "/settings/{key}", h.getSetting)
-	r.handle("PUT", "/settings/{key}", h.putSetting)
-	r.handle("DELETE", "/settings/{key}", h.deleteSetting)
-	r.handle("GET", "/setting-definitions", h.settingDefinitions)
+	h.registerSettingRoutes(r)
+	h.registerChannelRoutes(r)
+	h.registerWatermarkRoutes(r)
+	h.registerHistoryRoutes(r)
+	h.registerWallpaperRoutes(r)
+	h.registerLogRoutes(r)
+	h.registerEventRoutes(r)
 
-	r.handle("GET", "/channels", h.listChannels)
-	r.handle("POST", "/channels", h.upsertChannel)
-	r.handle("POST", "/channels/reorder", h.reorderChannels)
-	r.handle("GET", "/channels/{name}", h.getChannel)
-	r.handle("PUT", "/channels/{name}", h.upsertChannel)
-	r.handle("DELETE", "/channels/{name}", h.deleteChannel)
-	r.handle("GET", "/channel-types", h.channelTypes)
-
-	r.handle("GET", "/channel-templates", h.listTemplates)
-	r.handle("POST", "/channel-templates", h.upsertTemplate)
-	r.handle("GET", "/channel-templates/{name}", h.getTemplate)
-	r.handle("PUT", "/channel-templates/{name}", h.upsertTemplate)
-	r.handle("DELETE", "/channel-templates/{name}", h.deleteTemplate)
-	r.handle("POST", "/channel-templates/{name}/inline", h.inlineTemplate)
-
-	r.handle("GET", "/watermark-layers", h.listWatermarkLayers)
-	r.handle("POST", "/watermark-layers", h.upsertWatermarkLayer)
-	r.handle("PUT", "/watermark-layers/{id}", h.upsertWatermarkLayer)
-	r.handle("DELETE", "/watermark-layers/{id}", h.deleteWatermarkLayer)
-
-	r.handle("GET", "/history", h.listWallpaperHistory)
-	r.handle("POST", "/history/prune", h.pruneHistory)
-	r.handle("GET", "/history/{id}", h.getWallpaperHistoryEntry)
-	r.handle("DELETE", "/history/{id}", h.deleteWallpaperHistoryEntry)
-	r.handle("GET", "/history/{id}/thumbnail", h.historyThumbnail)
-	r.handle("POST", "/history/{id}/reapply", h.reapplyHistoryEntry)
-
-	r.handle("GET", "/wallpaper/current", h.currentWallpaper)
-	r.handle("GET", "/wallpaper/current/image", h.currentWallpaperImage)
-	r.handle("POST", "/refresh", h.refresh)
-
-	r.handle("GET", "/logs", h.readLogs)
-	r.handle("GET", "/logs/files", h.listLogFiles)
-	r.handle("GET", "/logs/files/{name}", h.downloadLogFile)
-
-	// One stream carrying log lines, configuration changes and refresh
-	// progress. A single endpoint because it works unchanged in the webview,
-	// in a browser and under curl, which is what keeps the UI from needing a
-	// transport the CLI does not have.
-	r.handle("GET", "/events", h.streamEvents)
-
-	// Catch-alls, so an unrouted path or an unsupported method produces the
-	// same JSON error shape as everything else. Go's ServeMux would otherwise
-	// answer with a plain-text body that a client decoding JSON cannot read.
-	//
-	// These also shadow the mux's own 405 handling -- a pattern that matches
-	// the path but not the method no longer matches at all once a prefix
-	// pattern exists -- so the router reconstructs the distinction itself.
 	// The frontend. Inside the authenticated mux, so the interface is no more
 	// reachable than the API it drives; a browser authenticates with the
 	// session cookie the handshake above set.
@@ -214,6 +168,13 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 		http.Redirect(w, r, uiPath, http.StatusMovedPermanently)
 	})
 
+	// Catch-alls, so an unrouted path or an unsupported method produces the
+	// same JSON error shape as everything else. Go's ServeMux would otherwise
+	// answer with a plain-text body that a client decoding JSON cannot read.
+	//
+	// These also shadow the mux's own 405 handling -- a pattern that matches
+	// the path but not the method no longer matches at all once a prefix
+	// pattern exists -- so the router reconstructs the distinction itself.
 	authed.HandleFunc("/", r.unmatched)
 	authed.HandleFunc(wire.BasePath+"/", r.unmatched)
 
