@@ -9,23 +9,23 @@ jobs:
   build-windows-amd64:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
-        node-version: 20
+        node-version: 24
         cache: npm
         cache-dependency-path: frontend/package-lock.json
 
@@ -50,7 +50,7 @@ jobs:
         cd bin/
         7z a goTApaper-windows-amd64.zip *.* -r
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: success()
       with:
         name: goTApaper-windows-amd64.zip
@@ -81,25 +81,25 @@ jobs:
         sudo apt-get update -y
         sudo apt-get install -y git build-essential libgtk-4-dev libwebkitgtk-6.0-dev
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
-        node-version: 20
+        node-version: 24
         cache: npm
         cache-dependency-path: frontend/package-lock.json
 
@@ -124,7 +124,7 @@ jobs:
         cd bin/
         tar czf "goTApaper-${{ matrix.osarch }}.tgz" *.*
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: success()
       with:
         name: goTApaper-${{ matrix.osarch }}.tgz
@@ -133,23 +133,23 @@ jobs:
   build-darwin:
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
 
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
-        node-version: 20
+        node-version: 24
         cache: npm
         cache-dependency-path: frontend/package-lock.json
 
@@ -182,7 +182,7 @@ jobs:
         7z a goTApaper-darwin-arm64.zip goTApaper-*-darwin-arm64
         rm goTApaper-*-darwin-amd64 goTApaper-*-darwin-arm64
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: success()
       with:
         name: goTApaper-darwin
@@ -198,7 +198,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
         fetch-tags: true
@@ -206,7 +206,7 @@ jobs:
     - name: Set version
       run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       id: download
       with:
         path: artifacts
@@ -237,7 +237,7 @@ jobs:
         find release/ -type f
         #echo "::set-output name=release-assets::$(find release/ -type f)"
 
-    - uses: softprops/action-gh-release@v2
+    - uses: softprops/action-gh-release@v3
       with:
         draft: true
         make_latest: true
