@@ -195,7 +195,7 @@ func pruneWallpaperCaches(justSet string) {
 	}
 	logrus.Infof(
 		"reclaimed %s from the macOS wallpaper caches (%d picker entries, %d rendered bitmaps)",
-		HumanBytes(stats.TotalBytes), len(stats.Entries), len(stats.Renders),
+		util.HumanBytes(stats.TotalBytes), len(stats.Entries), len(stats.Renders),
 	)
 }
 
