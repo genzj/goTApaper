@@ -171,8 +171,15 @@ type WallpaperHistoryEntry struct {
 	Credit  string `json:"credit,omitempty"`
 	Format  string `json:"format,omitempty"`
 
-	UploadTime   int64 `json:"uploadTime,omitempty"`
+	UploadTime int64 `json:"uploadTime,omitempty"`
+	// DownloadTime is when the picture was last applied. A re-application
+	// updates it, so an entry applied again sorts as recent.
 	DownloadTime int64 `json:"downloadTime"`
+	// FirstAppliedTime is when the picture was first applied. It equals
+	// DownloadTime for an entry applied only once.
+	FirstAppliedTime int64 `json:"firstAppliedTime"`
+	// TimesApplied counts applications, re-applications included.
+	TimesApplied int `json:"timesApplied"`
 
 	// FilePath is where the wallpaper was written. The same path recurs on
 	// every row, because the wallpaper file is overwritten on each refresh;
@@ -246,6 +253,12 @@ type Store interface {
 	WallpaperHistoryCount() (int, error)
 	// WallpaperHistoryEntryByID returns one row, or ErrNotFound.
 	WallpaperHistoryEntryByID(id int64) (WallpaperHistoryEntry, error)
+	// MarkReapplied records that an entry was applied again: it becomes the
+	// newest entry, keeping when it was first applied, rather than a duplicate
+	// being appended. A non-empty thumbPath replaces the entry's thumbnail,
+	// for one whose file had gone. It returns ErrNotFound if the entry was
+	// deleted in the meantime.
+	MarkReapplied(id, at int64, filePath, thumbPath string) error
 	// LastAppliedURL returns the URL of the newest entry for a channel
 	// instance, or "" if it has none. It is what deduplicates downloads: a
 	// channel skips a picture it applied last time.

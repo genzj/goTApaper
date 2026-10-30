@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/history"
 	"github.com/genzj/goTApaper/service"
@@ -108,20 +109,25 @@ var historyReapplyCmd = &cobra.Command{
 The picture is fetched from the URL the history kept, not from the channel that
 produced it, so this re-applies that exact wallpaper rather than whatever the
 provider is serving now. Some providers expire their links, in which case the
-download fails and the current wallpaper is left alone.`,
+download fails and the current wallpaper is left alone.
+
+With a daemon running, the daemon does the download and this returns as soon
+as it has started; follow it with "goTApaper logs -f". It is refused while
+another download is in progress.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		id := mustParseID(args[0])
 
 		// Routed through the daemon when one is running, so the picture is
-		// applied by the process that owns the tray state and the database.
+		// applied by the process that owns the tray, the database and the
+		// one-download-at-a-time rule.
 		if client := daemonClient(); client != nil {
-			var result service.RefreshResult
-			if err := client.Reapply(id, &result); err != nil {
+			if err := client.Reapply(id, nil); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
-			reportReapplied(result)
+			fmt.Printf("re-applying history entry %d in the background; "+
+				"follow it with \"goTApaper logs -f\"\n", id)
 			return
 		}
 
@@ -135,10 +141,7 @@ download fails and the current wallpaper is left alone.`,
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		reportReapplied(service.RefreshResult{
-			Channel: meta.ChannelKey, Type: meta.Channel,
-			Title: meta.Title, Credit: meta.Credit,
-		})
+		reportReapplied(meta)
 	},
 }
 
@@ -214,21 +217,20 @@ func init() {
 // no lock worth contending and work with nothing running. Writes that the
 // daemon should react to route through the client instead.
 func wallpaperService() *service.Wallpaper {
-	return service.NewWallpaper(currentStore(), refresh, reapply)
+	return service.NewWallpaper(currentStore())
 }
 
-func reportReapplied(result service.RefreshResult) {
-	if result.Title != "" {
-		fmt.Printf("applied %q", result.Title)
-		if result.Credit != "" {
-			fmt.Printf(" by %s", result.Credit)
+func reportReapplied(meta *channel.PictureMeta) {
+	if meta != nil && meta.Title != "" {
+		fmt.Printf("applied %q", meta.Title)
+		if meta.Credit != "" {
+			fmt.Printf(" by %s", meta.Credit)
 		}
 		fmt.Println()
 		return
 	}
 	fmt.Println("wallpaper applied")
 }
-
 func reportPruned(result history.SweepResult) {
 	verb := "removed"
 	if result.DryRun {

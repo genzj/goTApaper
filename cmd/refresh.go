@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -25,15 +26,35 @@ import (
 var errNoAvailableChannel error = fmt.Errorf("no available channel")
 
 var refreshCmd = &cobra.Command{
-	Use:   "refresh",
+	Use:   "refresh [channel...]",
 	Short: "Trigger pic downloading and wallpaper setting",
-	Long:  `Trigger pic downloading and wallpaper setting`,
+	Long: `Download a wallpaper and set it.
+
+With a daemon running, the daemon does the download and this returns as soon
+as it has started; it is refused while another download is in progress. Two
+processes downloading at once would race to write the same wallpaper file.
+Use --local to download in this process regardless.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		refresh(args)
+		if !refreshLocal {
+			if client := daemonClient(); client != nil {
+				if err := client.Refresh(args, force, nil); err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+				fmt.Println("refreshing in the background; follow it with \"goTApaper logs -f\"")
+				return
+			}
+		}
+		if _, err := refresh(args, force); err != nil {
+			os.Exit(1)
+		}
 	},
 }
 
-var force bool
+var (
+	force        bool
+	refreshLocal bool
+)
 
 func init() {
 	refreshCmd.PersistentFlags().String(
@@ -41,6 +62,10 @@ func init() {
 	)
 	refreshCmd.PersistentFlags().BoolVar(
 		&force, "force", false, "ignore history and always download",
+	)
+	refreshCmd.PersistentFlags().BoolVar(
+		&refreshLocal, "local", false,
+		"download in this process even if a daemon is running",
 	)
 	RootCmd.AddCommand(refreshCmd)
 }
@@ -89,7 +114,11 @@ func collectSpecifiedChannels(names []string) ([]store.EffectiveChannel, error) 
 	return out, nil
 }
 
-func refresh(specifiedChannels []string) (*channel.PictureMeta, error) {
+// refresh downloads and applies a wallpaper. force downloads even a picture
+// the channel applied last time. It is a parameter rather than the --force
+// flag read directly, because the daemon runs it for API requests that each
+// bring their own.
+func refresh(specifiedChannels []string, force bool) (*channel.PictureMeta, error) {
 	// No config reload here: the store is read live, and a change made through
 	// the API or the CLI emits an event the daemon already listens for.
 	activeChannels, err := collectSpecifiedChannels(specifiedChannels)
@@ -184,11 +213,12 @@ func detectOneChannel(
 		return nil, err
 	}
 
-	return applyPicture(l, raw, img, meta, wallpaperSetter, layers)
+	return applyPicture(l, raw, img, meta, wallpaperSetter, layers, nil)
 }
 
 // applyPicture crops, watermarks, writes and sets a downloaded picture, then
-// records it in the browsable history.
+// records it in the history. reapplied is the history entry the picture came
+// from when it is being applied again, and nil for a fresh download.
 //
 // Split out of detectOneChannel so that re-applying a history entry runs the
 // same steps rather than a second implementation that could drift: a re-applied
@@ -200,6 +230,7 @@ func applyPicture(
 	meta *channel.PictureMeta,
 	wallpaperSetter setter.Setter,
 	layers []store.WatermarkLayer,
+	reapplied *store.WallpaperHistoryEntry,
 ) (*channel.PictureMeta, error) {
 	newImg := actor.DefaultCropper.Crop(img)
 
@@ -245,20 +276,36 @@ func applyPicture(
 
 	// Recorded only after the wallpaper is actually on the desktop, so the
 	// history is a log of what was applied rather than of what was downloaded.
-	recordHistory(l, meta, img, wallpaperFileName)
+	recordHistory(l, meta, img, wallpaperFileName, reapplied)
 
 	return meta, err
 }
 
-// recordHistory appends the browsable history entry for a wallpaper that has
-// just been applied, writes its thumbnail, and enforces the entry cap.
+// recordHistory records a wallpaper that has just been applied, writes its
+// thumbnail, and enforces the entry cap.
+//
+// A re-applied picture updates the entry it came from instead of appending a
+// second one: the history lists pictures, and one picture applied twice is one
+// entry applied twice, not two entries.
 //
 // Every failure here is logged and swallowed. The wallpaper is already set,
 // which is the user's actual goal; losing a history row is a far smaller
 // problem than turning a successful refresh into a failed one.
 func recordHistory(
 	l *logrus.Entry, meta *channel.PictureMeta, img image.Image, wallpaperFileName string,
+	reapplied *store.WallpaperHistoryEntry,
 ) {
+	now := time.Now().Unix()
+
+	if reapplied != nil {
+		if markReapplied(l, img, wallpaperFileName, reapplied, now) {
+			sweepHistory(l)
+			return
+		}
+		// The entry went while it was being re-applied -- deleted, or pruned.
+		// The picture is on the desktop regardless, so record it afresh.
+	}
+
 	entry := store.WallpaperHistoryEntry{
 		ChannelName:  meta.ChannelKey,
 		ChannelType:  meta.Channel,
@@ -267,7 +314,7 @@ func recordHistory(
 		Caption:      meta.Caption,
 		Credit:       meta.Credit,
 		Format:       meta.Format,
-		DownloadTime: time.Now().Unix(),
+		DownloadTime: now,
 		FilePath:     wallpaperFileName,
 	}
 	if !meta.UploadTime.IsZero() {
@@ -278,15 +325,7 @@ func recordHistory(
 	// named after the download time rather than the row id, which does not
 	// exist yet. A file whose row never materialises is reclaimed by the
 	// orphan sweep below.
-	if config.GetBool(config.KeyHistoryThumbnails) {
-		name := fmt.Sprintf("%s-%d.jpg", meta.ChannelKey, entry.DownloadTime)
-		path := filepath.Join(config.GetThumbnailDir(), name)
-		if written, err := actor.WriteThumbnail(img, path, config.DefaultThumbnailWidth); err != nil {
-			l.WithError(err).Warn("cannot write the history thumbnail")
-		} else {
-			entry.ThumbPath = written
-		}
-	}
+	entry.ThumbPath = writeHistoryThumbnail(l, img, meta.ChannelKey, now)
 
 	if _, err := currentStore().AppendWallpaperHistory(entry); err != nil {
 		l.WithError(err).Warn("cannot record the wallpaper history")
@@ -294,6 +333,47 @@ func recordHistory(
 	}
 
 	sweepHistory(l)
+}
+
+// markReapplied updates the entry a picture was re-applied from, reporting
+// whether it still existed.
+//
+// Its thumbnail is kept: it is the same picture. One is written only if the
+// entry has none on disk -- recorded before thumbnails were on, or reclaimed
+// since -- so re-applying also repairs a history entry with nothing to show.
+func markReapplied(
+	l *logrus.Entry, img image.Image, wallpaperFileName string,
+	entry *store.WallpaperHistoryEntry, now int64,
+) bool {
+	thumb := ""
+	if entry.ThumbPath == "" || !fileExists(entry.ThumbPath) {
+		thumb = writeHistoryThumbnail(l, img, entry.ChannelName, now)
+	}
+
+	err := currentStore().MarkReapplied(entry.ID, now, wallpaperFileName, thumb)
+	if errors.Is(err, store.ErrNotFound) {
+		return false
+	}
+	if err != nil {
+		l.WithError(err).Warn("cannot record the re-applied wallpaper in the history")
+	}
+	return true
+}
+
+// writeHistoryThumbnail writes a thumbnail for the history, returning its
+// path, or "" when thumbnails are off or it could not be written.
+func writeHistoryThumbnail(l *logrus.Entry, img image.Image, channelName string, at int64) string {
+	if !config.GetBool(config.KeyHistoryThumbnails) {
+		return ""
+	}
+	name := fmt.Sprintf("%s-%d.jpg", channelName, at)
+	path := filepath.Join(config.GetThumbnailDir(), name)
+	written, err := actor.WriteThumbnail(img, path, config.DefaultThumbnailWidth)
+	if err != nil {
+		l.WithError(err).Warn("cannot write the history thumbnail")
+		return ""
+	}
+	return written
 }
 
 // sweepHistory enforces the history entry cap and reclaims unreferenced

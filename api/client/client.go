@@ -24,10 +24,6 @@ import (
 // be queued, short enough that a wedged daemon does not hang the CLI.
 const requestTimeout = 10 * time.Second
 
-// downloadTimeout bounds a call that fetches a picture from a provider before
-// it can answer, which no ten-second deadline will cover on a slow link.
-const downloadTimeout = 2 * time.Minute
-
 // Client issues requests to a running daemon.
 //
 // Routing writes through the daemon rather than straight to the database means
@@ -147,11 +143,16 @@ func (c *Client) UnsetSetting(key string) error {
 
 // Wallpaper and history.
 
-// Refresh asks the daemon to download and apply a wallpaper now. An empty
-// channel list uses the configured rotation.
-func (c *Client) Refresh(channels []string, out any) error {
-	return c.Do(http.MethodPost, "/refresh",
-		map[string][]string{"channels": channels}, out)
+// Refresh asks the daemon to start downloading a wallpaper. It returns once
+// the download has started, not when it finishes; the outcome arrives as a
+// download-finished event and in Status. An empty channel list uses the
+// configured rotation. A download already in progress is reported as an
+// error rather than queued.
+func (c *Client) Refresh(channels []string, force bool, out any) error {
+	return c.Do(http.MethodPost, "/refresh", map[string]any{
+		"channels": channels,
+		"force":    force,
+	}, out)
 }
 
 // WallpaperHistory reads one page of the browsable history.
@@ -170,14 +171,10 @@ func (c *Client) DeleteWallpaperHistoryEntry(id int64) error {
 	return c.Do(http.MethodDelete, fmt.Sprintf("/history/%d", id), nil, nil)
 }
 
-// Reapply downloads a recorded wallpaper again and sets it.
-//
-// This one needs a longer deadline than the shared timeout allows: it makes an
-// outbound HTTP request to the original provider before it can answer.
+// Reapply asks the daemon to start downloading a recorded wallpaper again.
+// Like Refresh, it returns once the download has started.
 func (c *Client) Reapply(id int64, out any) error {
-	return c.withTimeout(downloadTimeout).Do(
-		http.MethodPost, fmt.Sprintf("/history/%d/reapply", id), nil, out,
-	)
+	return c.Do(http.MethodPost, fmt.Sprintf("/history/%d/reapply", id), nil, out)
 }
 
 // PruneHistory enforces the history cap through the daemon. A keepAtMost of
@@ -189,9 +186,14 @@ func (c *Client) PruneHistory(keepAtMost int, dryRun bool, out any) error {
 	}, out)
 }
 
-// CurrentWallpaper reads what is on the desktop now.
-func (c *Client) CurrentWallpaper(out any) error {
-	return c.Do(http.MethodGet, "/wallpaper/current", nil, out)
+// LastApplied reads the wallpaper the daemon applied most recently.
+func (c *Client) LastApplied(out any) error {
+	return c.Do(http.MethodGet, "/wallpaper/last-applied", nil, out)
+}
+
+// Status reads what the daemon is doing.
+func (c *Client) Status(out any) error {
+	return c.Do(http.MethodGet, "/status", nil, out)
 }
 
 // Logs.
@@ -239,14 +241,4 @@ func (c *Client) Events() (io.ReadCloser, error) {
 		return nil, decodeError(http.MethodGet, "/events", resp.Status, payload)
 	}
 	return resp.Body, nil
-}
-
-// withTimeout returns a shallow copy of the client using a different deadline,
-// so one slow call does not require relaxing it for every other.
-func (c *Client) withTimeout(timeout time.Duration) *Client {
-	return &Client{
-		base:  c.base,
-		token: c.token,
-		http:  &http.Client{Timeout: timeout},
-	}
 }

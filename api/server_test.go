@@ -144,10 +144,11 @@ func startRealServer(t *testing.T) (*Server, string) {
 	t.Cleanup(func() { s.Close() })
 
 	srv, err := Start(Options{
-		AppDir: dir,
-		Port:   0,
-		Config: service.NewConfig(s),
-		Wallpaper: service.NewWallpaper(s, func([]string) (*channel.PictureMeta, error) {
+		AppDir:    dir,
+		Port:      0,
+		Config:    service.NewConfig(s),
+		Wallpaper: service.NewWallpaper(s),
+		Downloader: service.NewDownloader(s, func([]string, bool) (*channel.PictureMeta, error) {
 			return nil, nil
 		}, nil),
 	})

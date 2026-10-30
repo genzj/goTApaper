@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config"
@@ -22,6 +23,15 @@ func init() {
 
 func newTestServer(t *testing.T) (http.Handler, store.Store) {
 	t.Helper()
+	h, s := newTestHandlers(t, nil)
+	return h.routes(testToken, newTicketStore()), s
+}
+
+// newTestHandlers builds the handler set over an in-memory store. A nil gate
+// lets downloads finish at once; a test of the one-download-at-a-time rule
+// passes a channel and closes it to let the download in flight finish.
+func newTestHandlers(t *testing.T, gate chan struct{}) (*handlers, store.Store) {
+	t.Helper()
 
 	s, err := sqlite.Open(sqlite.MemoryPath)
 	if err != nil {
@@ -29,17 +39,43 @@ func newTestServer(t *testing.T) (http.Handler, store.Store) {
 	}
 	t.Cleanup(func() { s.Close() })
 
-	h := &handlers{
-		config: service.NewConfig(s),
-		wallpaper: service.NewWallpaper(s, func([]string) (*channel.PictureMeta, error) {
-			return &channel.PictureMeta{ChannelKey: "bing", Title: "Test"}, nil
-		}, func(e store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
-			return &channel.PictureMeta{ChannelKey: e.ChannelName, Title: e.Title}, nil
-		}),
-		logs:   service.NewLogs(),
-		events: newEventHub(),
+	wait := func() {
+		if gate != nil {
+			<-gate
+		}
 	}
-	return h.routes(testToken, newTicketStore()), s
+	downloader := service.NewDownloader(s, func([]string, bool) (*channel.PictureMeta, error) {
+		wait()
+		return &channel.PictureMeta{ChannelKey: "bing", Title: "Test"}, nil
+	}, func(e store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
+		wait()
+		return &channel.PictureMeta{ChannelKey: e.ChannelName, Title: e.Title}, nil
+	})
+
+	h := &handlers{
+		config:     service.NewConfig(s),
+		wallpaper:  service.NewWallpaper(s),
+		downloader: downloader,
+		logs:       service.NewLogs(),
+		events:     newEventHub(),
+		version:    "test",
+	}
+	downloader.OnChange(h.publishDownload)
+	return h, s
+}
+
+// waitIdle blocks until the downloader has nothing in flight.
+func waitIdle(t *testing.T, d *service.Downloader) service.DownloadStatus {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if st := d.Status(); st.State == service.StateIdle {
+			return st
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("the download did not finish")
+	return service.DownloadStatus{}
 }
 
 func do(t *testing.T, h http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
@@ -404,19 +440,21 @@ func TestUnknownFieldIsRejected(t *testing.T) {
 }
 
 func TestRefresh(t *testing.T) {
-	h, _ := newTestServer(t)
+	handlers, _ := newTestHandlers(t, nil)
+	h := handlers.routes(testToken, newTicketStore())
 
 	rec := do(t, h, "POST", "/api/v1/refresh", "", testToken)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202: %s", rec.Code, rec.Body)
 	}
 
-	var result service.RefreshResult
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatalf("decode = %v", err)
+	// The picture it applied is reported once the download finishes.
+	st := waitIdle(t, handlers.downloader)
+	if st.Last == nil {
+		t.Fatal("no outcome recorded")
 	}
-	if result.Channel != "bing" || result.Title != "Test" {
-		t.Errorf("result = %+v, want the stub's metadata", result)
+	if st.Last.Result.Channel != "bing" || st.Last.Result.Title != "Test" {
+		t.Errorf("result = %+v, want the stub's metadata", st.Last.Result)
 	}
 }
 

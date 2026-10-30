@@ -1,7 +1,6 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"image"
 
@@ -12,104 +11,27 @@ import (
 	_ "image/png"
 	"os"
 
-	"github.com/genzj/goTApaper/channel"
 	"github.com/genzj/goTApaper/config/store"
 )
 
-// RefreshFunc downloads and applies a wallpaper. It is supplied by the caller
-// rather than implemented here, because the pipeline lives in cmd alongside
-// the cobra commands that also drive it; injecting it keeps one
-// implementation rather than two.
-type RefreshFunc func(channels []string) (*channel.PictureMeta, error)
-
-// ReapplyFunc downloads a picture from a URL and applies it as the wallpaper,
-// as if a channel had just served it. Supplied by the caller for the same
-// reason RefreshFunc is: the pipeline lives in cmd.
-type ReapplyFunc func(entry store.WallpaperHistoryEntry) (*channel.PictureMeta, error)
-
-// Wallpaper exposes wallpaper operations.
+// Wallpaper exposes the applied wallpaper and its history. Downloading a new
+// one goes through Downloader, which owns the one-at-a-time rule.
 type Wallpaper struct {
-	store   store.Store
-	refresh RefreshFunc
-	reapply ReapplyFunc
+	store store.Store
 }
 
 // NewWallpaper builds a wallpaper service.
+func NewWallpaper(s store.Store) *Wallpaper {
+	return &Wallpaper{store: s}
+}
+
+// LastApplied describes the wallpaper goTApaper applied most recently: the
+// newest history entry, plus what is actually on disk.
 //
-// reapply may be nil, in which case re-applying a history entry is reported as
-// unsupported rather than panicking. That keeps the service constructible from
-// a test that only exercises configuration.
-func NewWallpaper(s store.Store, refresh RefreshFunc, reapply ReapplyFunc) *Wallpaper {
-	return &Wallpaper{store: s, refresh: refresh, reapply: reapply}
-}
-
-// RefreshResult reports the outcome of a refresh.
-type RefreshResult struct {
-	// Channel is the channel key that supplied the picture.
-	Channel string `json:"channel"`
-	// Type is the channel implementation used.
-	Type  string `json:"type"`
-	Title string `json:"title,omitempty"`
-	// Credit names the photographer or uploader.
-	Credit string `json:"credit,omitempty"`
-}
-
-// RefreshNow downloads and applies a wallpaper immediately. An empty channels
-// slice uses the configured rotation; naming channels runs those instead, even
-// if they are disabled.
-func (w *Wallpaper) RefreshNow(channels []string) (RefreshResult, error) {
-	meta, err := w.refresh(channels)
-	if err != nil {
-		return RefreshResult{}, err
-	}
-	if meta == nil {
-		return RefreshResult{}, nil
-	}
-	return RefreshResult{
-		Channel: meta.ChannelKey,
-		Type:    meta.Channel,
-		Title:   meta.Title,
-		Credit:  meta.Credit,
-	}, nil
-}
-
-// Reapply downloads a recorded wallpaper again and sets it.
-//
-// The stored URL may have expired -- several providers serve time-limited
-// links -- in which case the download fails and the current wallpaper is left
-// alone.
-func (w *Wallpaper) Reapply(id int64) (RefreshResult, error) {
-	entry, err := w.store.WallpaperHistoryEntryByID(id)
-	if err != nil {
-		return RefreshResult{}, err
-	}
-	if entry.URL == "" {
-		return RefreshResult{}, fmt.Errorf(
-			"history entry %d has no source URL to download again", id,
-		)
-	}
-	if w.reapply == nil {
-		return RefreshResult{}, errors.New("re-applying a wallpaper is not available here")
-	}
-
-	meta, err := w.reapply(entry)
-	if err != nil {
-		return RefreshResult{}, err
-	}
-	if meta == nil {
-		return RefreshResult{}, nil
-	}
-	return RefreshResult{
-		Channel: meta.ChannelKey,
-		Type:    meta.Channel,
-		Title:   meta.Title,
-		Credit:  meta.Credit,
-	}, nil
-}
-
-// CurrentWallpaper describes the wallpaper now on the desktop: the newest
-// history entry, plus what is actually on disk.
-type CurrentWallpaper struct {
+// It is deliberately not called "current". goTApaper cannot see the desktop,
+// only what it last set there, and the user may have changed the wallpaper by
+// hand since.
+type LastApplied struct {
 	// Entry is the newest history row, absent if nothing has been applied yet.
 	Entry *store.WallpaperHistoryEntry `json:"entry,omitempty"`
 	// Path is the wallpaper file on disk.
@@ -125,9 +47,9 @@ type CurrentWallpaper struct {
 	Exists bool `json:"exists"`
 }
 
-// Current returns the wallpaper now applied.
-func (w *Wallpaper) Current() (CurrentWallpaper, error) {
-	out := CurrentWallpaper{}
+// LastApplied returns the wallpaper goTApaper applied most recently.
+func (w *Wallpaper) LastApplied() (LastApplied, error) {
+	out := LastApplied{}
 
 	entries, err := w.store.WallpaperHistory(1, 0)
 	if err != nil {
@@ -164,21 +86,21 @@ func (w *Wallpaper) Current() (CurrentWallpaper, error) {
 	return out, nil
 }
 
-// CurrentImage opens the wallpaper file now applied, for streaming to a
-// client. The caller closes it.
-func (w *Wallpaper) CurrentImage() (*os.File, string, error) {
-	current, err := w.Current()
+// LastAppliedImage opens the wallpaper file goTApaper applied most recently,
+// for streaming to a client. The caller closes it.
+func (w *Wallpaper) LastAppliedImage() (*os.File, string, error) {
+	last, err := w.LastApplied()
 	if err != nil {
 		return nil, "", err
 	}
-	if current.Path == "" {
+	if last.Path == "" {
 		return nil, "", fmt.Errorf("%w: no wallpaper has been applied yet", store.ErrNotFound)
 	}
 
-	file, err := os.Open(current.Path)
+	file, err := os.Open(last.Path)
 	if os.IsNotExist(err) {
 		return nil, "", fmt.Errorf(
-			"%w: the wallpaper file %s is no longer on disk", store.ErrNotFound, current.Path,
+			"%w: the wallpaper file %s is no longer on disk", store.ErrNotFound, last.Path,
 		)
 	}
 	if err != nil {
@@ -186,8 +108,8 @@ func (w *Wallpaper) CurrentImage() (*os.File, string, error) {
 	}
 
 	contentType := "application/octet-stream"
-	if current.Entry != nil {
-		switch current.Entry.Format {
+	if last.Entry != nil {
+		switch last.Entry.Format {
 		case "jpeg", "jpg":
 			contentType = "image/jpeg"
 		case "png":

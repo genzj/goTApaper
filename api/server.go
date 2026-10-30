@@ -47,10 +47,13 @@ type Options struct {
 	AppDir string
 	// Port to listen on; zero picks an ephemeral one.
 	Port int
-	// Config, Wallpaper and Logs are the services to expose.
-	Config    *service.Config
-	Wallpaper *service.Wallpaper
-	Logs      *service.Logs
+	// Config, Wallpaper, Downloader and Logs are the services to expose.
+	Config     *service.Config
+	Wallpaper  *service.Wallpaper
+	Downloader *service.Downloader
+	Logs       *service.Logs
+	// Version is reported by GET /status.
+	Version string
 }
 
 // Start begins serving in the background.
@@ -74,10 +77,18 @@ func Start(opts Options) (*Server, error) {
 		logs = service.NewLogs()
 	}
 	h := &handlers{
-		config:    opts.Config,
-		wallpaper: opts.Wallpaper,
-		logs:      logs,
-		events:    newEventHub(),
+		config:     opts.Config,
+		wallpaper:  opts.Wallpaper,
+		downloader: opts.Downloader,
+		logs:       logs,
+		events:     newEventHub(),
+		version:    opts.Version,
+	}
+	if h.downloader != nil {
+		// Subscribed here rather than by the caller, so every download --
+		// whoever started it -- reaches the stream without the application
+		// having to remember to forward it.
+		h.downloader.OnChange(h.publishDownload)
 	}
 
 	tickets := newTicketStore()
