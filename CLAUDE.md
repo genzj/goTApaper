@@ -8,7 +8,7 @@ goTApaper is a cross-platform (Windows/macOS/Linux) desktop wallpaper manager wr
 
 ## Common Commands
 
-Toolchain is pinned via `mise.toml` (Go 1.26 — required by Wails v3 — Node 20, `gox` for cross-compilation). `GOPROXY=direct` is set there — the project resolves modules directly from source hosts rather than a proxy.
+Toolchain is pinned via `mise.toml` (Go 1.26 — required by Wails v3 — Node 24 LTS, `gox` for cross-compilation). `GOPROXY=direct` is set there — the project resolves modules directly from source hosts rather than a proxy.
 
 ```bash
 # Run all tests
