@@ -1,4 +1,4 @@
-.PHONY: build build-all build-windows-console clean test help default example generate frontend frontend-deps
+.PHONY: build build-all build-windows-console clean test help default example frontend frontend-deps
 
 UNAME := $(shell uname)
 
@@ -46,7 +46,7 @@ help:
 
 build: build-os-linux-amd64 build-os-linux-i386
 
-build-os-%: $(TARGET_DIR) generate frontend $(GO_SOURCES)
+build-os-%: $(TARGET_DIR) frontend $(GO_SOURCES)
 	make go-$@ example i18n
 
 FRONTEND_DIR := frontend
@@ -85,13 +85,13 @@ $(TARGET_DIR)/%.example: examples/%.example
 
 go-build-os-windows: go-build-os-windows-gui go-build-os-windows-console
 
-go-build-os-windows-console:
+go-build-os-windows-console: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win console edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
 
-go-build-os-windows-gui:
+go-build-os-windows-gui: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win gui edition"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
@@ -99,27 +99,27 @@ go-build-os-windows-gui:
 	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
 	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
-go-build-os-linux-amd64:
+go-build-os-linux-amd64: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -cgo -arch "amd64" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
-go-build-os-linux-i386:
+go-build-os-linux-i386: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    PKG_CONFIG_PATH="/usr/lib/i386-linux-gnu/pkgconfig:/usr/lib32/pkgconfig" \
 	    gox -cgo -arch "386" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
 
-go-build-os-darwin-amd64:
+go-build-os-darwin-amd64: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
 	    gox -cgo -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../... && \
 	    ../generate-dmg.sh "$(VERSION)" "amd64"
 
-go-build-os-darwin-arm64:
+go-build-os-darwin-arm64: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
 	cd $(TARGET_DIR) && \
@@ -127,7 +127,7 @@ go-build-os-darwin-arm64:
 	    ../generate-dmg.sh "$(VERSION)" "arm64"
 
 clean:
-	-rm -rf $(TARGET_DIR) data/example_vfsdata.go
+	-rm -rf $(TARGET_DIR)
 	# The placeholder stays: frontend/assets.go embeds this directory, and
 	# //go:embed fails on a missing one.
 	-find $(FRONTEND_DIR)/dist -mindepth 1 ! -name .gitkeep -delete
@@ -141,5 +141,3 @@ compile-messages:
 extract-messages:
 	goi18n *.all.json
 
-generate:
-	cd generate && { go generate -v || exit 1 ; cd .. ; }
