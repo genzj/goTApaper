@@ -103,6 +103,8 @@ export interface WatermarkLayer {
 }
 
 export interface HistoryEntry {
+  /** The thumbnail file is on disk, not merely recorded. */
+  hasThumbnail: boolean
   /** When the picture was first applied. Equal to downloadTime unless re-applied. */
   firstAppliedTime: number
   /** How many times the picture has been applied, re-applications included. */
@@ -323,6 +325,8 @@ export const api = {
   history: (limit: number, offset: number) =>
     request<HistoryPage>('GET', `/history?limit=${limit}&offset=${offset}`),
   reapply: (id: number) => request<DownloadStatus>('POST', `/history/${id}/reapply`),
+  // Downloads the picture and saves its thumbnail without applying it.
+  loadPreview: (id: number) => request<HistoryEntry>('POST', `/history/${id}/preview`),
   deleteHistoryEntry: (id: number) => request<void>('DELETE', `/history/${id}`),
   pruneHistory: (keepAtMost: number, dryRun: boolean) =>
     request<SweepResult>('POST', '/history/prune', { keepAtMost, dryRun }),

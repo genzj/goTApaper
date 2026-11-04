@@ -279,6 +279,10 @@ type Store interface {
 	// would delete, without deleting anything, so a dry run can report what it
 	// would do.
 	WallpaperHistoryBeyond(keepAtMost int) ([]string, error)
+	// SetThumbnail records a thumbnail for an entry, returning the path it
+	// replaces ("" if none) so the caller can remove that file. It returns
+	// ErrNotFound for a missing entry.
+	SetThumbnail(id int64, path string) (string, error)
 	// ThumbnailPaths returns every thumbnail path still referenced, for
 	// reclaiming files that no row points at.
 	ThumbnailPaths() ([]string, error)

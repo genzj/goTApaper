@@ -20,6 +20,17 @@ export function unixTime(seconds: number | undefined): string {
   return new Date(seconds * 1000).toLocaleString()
 }
 
+/** stamp formats a Unix timestamp as YYYY-MM-DD HH:MM:SS, local time. */
+export function stamp(seconds: number | undefined): string {
+  if (!seconds) return '—'
+  const d = new Date(seconds * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  )
+}
+
 /** clock formats an ISO timestamp as a time of day, for log lines. */
 export function clock(iso: string): string {
   const date = new Date(iso)

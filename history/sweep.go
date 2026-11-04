@@ -15,9 +15,10 @@ import (
 //
 // A thumbnail is written moments before the row that references it is
 // inserted, so a sweep running concurrently with a refresh would otherwise be
-// free to delete a file that is about to become live. One hour is far longer
-// than that window and far shorter than anyone would notice the disk use.
-const OrphanGrace = time.Hour
+// free to delete a file that is about to become live. That window is seconds;
+// a day is deliberately generous, so a thumbnail is never lost to a sweep
+// that misjudged it, at the cost of a few kilobytes held a little longer.
+const OrphanGrace = 24 * time.Hour
 
 // Pruner is the part of the store the sweep needs. A narrow interface rather
 // than the whole store, so the sweep can be tested without a database and so

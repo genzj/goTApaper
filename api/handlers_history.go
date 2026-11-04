@@ -11,6 +11,23 @@ func (h *handlers) registerHistoryRoutes(r *router) {
 	r.handle("DELETE", "/history/{id}", h.deleteWallpaperHistoryEntry)
 	r.handle("GET", "/history/{id}/thumbnail", h.historyThumbnail)
 	r.handle("POST", "/history/{id}/reapply", h.reapplyHistoryEntry)
+	r.handle("POST", "/history/{id}/preview", h.loadPreview)
+}
+
+// loadPreview downloads an entry's picture and saves its thumbnail, without
+// applying it. Synchronous, unlike reapply: it changes nothing on the desktop,
+// and the caller is waiting to see the picture.
+func (h *handlers) loadPreview(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	item, err := h.wallpaper.LoadPreview(id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func (h *handlers) listWallpaperHistory(w http.ResponseWriter, r *http.Request) {

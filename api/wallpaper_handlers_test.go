@@ -3,6 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -402,3 +405,73 @@ func TestLastAppliedImageIsNotCached(t *testing.T) {
 func itoa(id int64) string { return strconv.FormatInt(id, 10) }
 
 func readerOf(body string) io.Reader { return strings.NewReader(body) }
+
+func TestLoadPreviewSavesAThumbnailWithoutApplying(t *testing.T) {
+	handlers, s := newTestHandlers(t, nil)
+	h := testRoutes(handlers, newTicketStore())
+
+	// A file:// picture, so the test needs no network: the fixed channel
+	// records these, and previews read them the same way re-apply does.
+	pic := filepath.Join(t.TempDir(), "pic.jpg")
+	writeJPEG(t, pic, 1200, 800)
+	id, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
+		ChannelName: "fixed", URL: "file://" + pic, DownloadTime: 100,
+	})
+	if err != nil {
+		t.Fatalf("AppendWallpaperHistory: %v", err)
+	}
+
+	// Without a thumbnail, the list says so, which is the client's cue to
+	// offer a preview.
+	var page service.HistoryPage
+	getJSON(t, h, "/api/v1/history", &page)
+	if page.Entries[0].HasThumbnail {
+		t.Fatal("HasThumbnail = true before any thumbnail exists")
+	}
+
+	rec := post(t, h, "/api/v1/history/"+itoa(id)+"/preview", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var item service.HistoryItem
+	if err := json.Unmarshal(rec.Body.Bytes(), &item); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !item.HasThumbnail || item.ThumbPath == "" {
+		t.Fatalf("item = %+v, want a thumbnail", item)
+	}
+
+	// And it is served, persisted, and nothing was downloaded as a wallpaper.
+	if rec := getJSON(t, h, "/api/v1/history/"+itoa(id)+"/thumbnail", nil); rec.Code != http.StatusOK {
+		t.Errorf("thumbnail status = %d", rec.Code)
+	}
+	if st := handlers.downloader.Status(); st.Last != nil {
+		t.Errorf("a download ran: %+v", st.Last)
+	}
+}
+
+func TestLoadPreviewWithNoURLIsRefused(t *testing.T) {
+	h, s := newTestServer(t)
+	id, _ := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{ChannelName: "old"})
+	if rec := post(t, h, "/api/v1/history/"+itoa(id)+"/preview", ""); rec.Code < 400 {
+		t.Fatalf("status = %d, want an error", rec.Code)
+	}
+}
+
+func writeJPEG(t *testing.T, path string, w, h int) {
+	t.Helper()
+	im := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y += 7 {
+		for x := 0; x < w; x += 7 {
+			im.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 90, A: 255})
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := jpeg.Encode(f, im, nil); err != nil {
+		t.Fatal(err)
+	}
+}

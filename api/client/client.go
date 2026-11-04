@@ -177,6 +177,12 @@ func (c *Client) Reapply(id int64, out any) error {
 	return c.Do(http.MethodPost, fmt.Sprintf("/history/%d/reapply", id), nil, out)
 }
 
+// LoadPreview downloads a history entry's picture and saves its thumbnail,
+// without applying it.
+func (c *Client) LoadPreview(id int64, out any) error {
+	return c.Do(http.MethodPost, fmt.Sprintf("/history/%d/preview", id), nil, out)
+}
+
 // PruneHistory enforces the history cap through the daemon. A keepAtMost of
 // zero means "use the configured cap".
 func (c *Client) PruneHistory(keepAtMost int, dryRun bool, out any) error {
