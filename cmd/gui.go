@@ -107,7 +107,7 @@ func runWindowed() {
 			// Busy is not worth reporting: the tray disables its Refresh item
 			// while a download runs, so this only races a download that
 			// started a moment ago.
-			if err := trayDownloader.Refresh(channels, false); err != nil {
+			if err := trayDownloader.Refresh(channels, false, "tray"); err != nil {
 				logrus.WithError(err).Debug("tray refresh not started")
 			}
 		},

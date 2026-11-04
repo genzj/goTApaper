@@ -21,6 +21,7 @@ import (
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
 	"github.com/genzj/goTApaper/history"
+	"github.com/genzj/goTApaper/util"
 )
 
 var errNoAvailableChannel error = fmt.Errorf("no available channel")
@@ -243,9 +244,10 @@ func applyPicture(
 		l.Error(err)
 		return nil, err
 	}
+	// Still deferred for the early returns; the success path closes it
+	// before handing it on, so an already-closed file is not an error here.
 	defer func(out *os.File) {
-		err := out.Close()
-		if err != nil {
+		if err := out.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
 			logrus.Warnf("error when closing file %s: %s", out.Name(), err)
 		}
 	}(out)
@@ -267,7 +269,22 @@ func applyPicture(
 		return nil, err
 	}
 
-	logrus.Debug("setting wallpaper...")
+	// Closed before hashing and handing on, so both see the whole file.
+	if err := out.Close(); err != nil {
+		l.WithError(err).Warn("cannot close the wallpaper file")
+	}
+
+	applying := l.WithFields(logrus.Fields{
+		"title":  meta.Title,
+		"url":    meta.URL,
+		"file":   wallpaperFileName,
+		"digest": util.FileDigest(wallpaperFileName),
+	})
+	if reapplied != nil {
+		applying = applying.WithField("entry", reapplied.ID)
+	}
+	applying.Info("applying wallpaper")
+
 	err = wallpaperSetter.Set(wallpaperFileName)
 	if err != nil {
 		l.Error(err)
@@ -340,10 +357,16 @@ func recordHistory(
 	// orphan sweep below.
 	entry.ThumbPath = writeHistoryThumbnail(l, img, meta.ChannelKey, now)
 
-	if _, err := currentStore().AppendWallpaperHistory(entry); err != nil {
+	id, err := currentStore().AppendWallpaperHistory(entry)
+	if err != nil {
 		l.WithError(err).Warn("cannot record the wallpaper history")
 		return
 	}
+	l.WithFields(logrus.Fields{
+		"entry": id,
+		"title": entry.Title,
+		"url":   entry.URL,
+	}).Info("history entry recorded")
 
 	sweepHistory(l)
 }
@@ -369,7 +392,13 @@ func markReapplied(
 	}
 	if err != nil {
 		l.WithError(err).Warn("cannot record the re-applied wallpaper in the history")
+		return true
 	}
+	l.WithFields(logrus.Fields{
+		"entry": entry.ID,
+		"title": entry.Title,
+		"url":   entry.URL,
+	}).Info("history entry updated")
 	return true
 }
 

@@ -65,6 +65,10 @@ type Job struct {
 	// Scheduled is set for a refresh the timer or a configuration change
 	// started, rather than a user.
 	Scheduled bool `json:"scheduled,omitempty"`
+	// Reason says what asked for the download -- "api", "tray", "timer",
+	// "startup", "config change: <key>", "queued: <reason>" -- so the log can
+	// show why a picture changed.
+	Reason string `json:"reason,omitempty"`
 }
 
 // RefreshResult reports the picture a download applied.
@@ -124,7 +128,10 @@ type Downloader struct {
 	running   *Job
 	startedAt time.Time
 	pending   bool
-	last      *Outcome
+	// pendingReason is why the queued refresh was asked for, the first
+	// request winning when several coalesce.
+	pendingReason string
+	last          *Outcome
 	listeners []func(DownloadEvent)
 }
 
@@ -161,8 +168,8 @@ func (d *Downloader) Status() DownloadStatus {
 // already running. An empty channels slice uses the configured rotation;
 // naming channels runs those instead, even if they are disabled. force
 // downloads even a picture a channel applied last time.
-func (d *Downloader) Refresh(channels []string, force bool) error {
-	job := Job{Kind: JobRefresh, Channels: channels, Force: force}
+func (d *Downloader) Refresh(channels []string, force bool, reason string) error {
+	job := Job{Kind: JobRefresh, Channels: channels, Force: force, Reason: reason}
 	return d.start(job, func() (*channel.PictureMeta, error) {
 		return d.refresh(channels, force)
 	})
@@ -174,7 +181,7 @@ func (d *Downloader) Refresh(channels []string, force bool) error {
 // The entry is checked before anything starts, so a request for a missing
 // entry or one with nothing to download gets an error it can act on rather
 // than a download that fails in the background.
-func (d *Downloader) Reapply(id int64) error {
+func (d *Downloader) Reapply(id int64, reason string) error {
 	entry, err := d.store.WallpaperHistoryEntryByID(id)
 	if err != nil {
 		return err
@@ -186,7 +193,7 @@ func (d *Downloader) Reapply(id int64) error {
 		return errors.New("re-applying a wallpaper is not available here")
 	}
 
-	job := Job{Kind: JobReapply, EntryID: id}
+	job := Job{Kind: JobReapply, EntryID: id, Reason: reason}
 	return d.start(job, func() (*channel.PictureMeta, error) {
 		return d.reapply(entry)
 	})
@@ -196,19 +203,30 @@ func (d *Downloader) Reapply(id int64) error {
 // never refused: if a download is running, one refresh runs after it instead.
 // Several requests arriving during one download still produce one refresh,
 // since they all want the same thing.
-func (d *Downloader) Schedule() {
-	job := Job{Kind: JobRefresh, Scheduled: true}
+func (d *Downloader) Schedule(reason string) {
+	job := Job{Kind: JobRefresh, Scheduled: true, Reason: reason}
 	err := d.start(job, func() (*channel.PictureMeta, error) {
 		return d.refresh(nil, false)
 	})
 	if errors.Is(err, ErrBusy) {
 		d.mu.Lock()
 		d.pending = true
+		if d.pendingReason == "" {
+			d.pendingReason = reason
+		}
+		running := d.running
 		d.mu.Unlock()
-		logrus.Debug("a download is running, refreshing again once it finishes")
+
+		// At info: a refresh that runs straight after a re-apply replaces the
+		// picture the user just chose, which looks like the re-apply applied
+		// the wrong one. This line is how to tell the two apart.
+		l := logrus.WithField("reason", reason)
+		if running != nil {
+			l = l.WithField("running", running.Kind).WithField("runningEntry", running.EntryID)
+		}
+		l.Info("a refresh was asked for during a download; it will run once that finishes")
 	}
 }
-
 // start runs fn in the background unless a download is already running.
 func (d *Downloader) start(job Job, fn func() (*channel.PictureMeta, error)) error {
 	d.mu.Lock()
@@ -222,8 +240,41 @@ func (d *Downloader) start(job Job, fn func() (*channel.PictureMeta, error)) err
 
 	d.notify(DownloadEvent{Job: job})
 
+	l := logrus.WithFields(logrus.Fields{
+		"kind":   job.Kind,
+		"reason": job.Reason,
+	})
+	if job.EntryID != 0 {
+		l = l.WithField("entry", job.EntryID)
+	}
+	if len(job.Channels) > 0 {
+		l = l.WithField("channels", job.Channels)
+	}
+	if job.Force {
+		l = l.WithField("force", true)
+	}
+	l.Info("download started")
+	started := time.Now()
+
 	go func() {
 		meta, err := fn()
+
+		done := l.WithField("took", time.Since(started).Round(time.Millisecond).String())
+		if meta != nil {
+			done = done.WithFields(logrus.Fields{
+				"channel": meta.ChannelKey,
+				"title":   meta.Title,
+				"url":     meta.URL,
+			})
+		}
+		switch {
+		case err != nil:
+			done.WithError(err).Warn("download failed")
+		case meta == nil:
+			done.Info("download finished without applying a picture")
+		default:
+			done.Info("download finished")
+		}
 
 		outcome := &Outcome{Job: job, FinishedAt: time.Now().Unix()}
 		if meta != nil {
@@ -237,13 +288,15 @@ func (d *Downloader) start(job Job, fn func() (*channel.PictureMeta, error)) err
 		d.running = nil
 		d.last = outcome
 		runPending := d.pending
+		pendingReason := d.pendingReason
 		d.pending = false
+		d.pendingReason = ""
 		d.mu.Unlock()
 
 		d.notify(DownloadEvent{Job: job, Finished: true, Meta: meta, Err: err})
 
 		if runPending {
-			d.Schedule()
+			d.Schedule("queued: " + pendingReason)
 		}
 	}()
 	return nil
