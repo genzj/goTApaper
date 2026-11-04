@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,8 +19,26 @@ import (
 
 const testToken = "test-token"
 
-func init() {
+// TestMain gives the tests an application directory of their own.
+//
+// Several routes resolve files under the application directory -- the log
+// files, the thumbnails a prune sweeps. Without this they fell through to the
+// real ~/.goTApaper, and the prune test deleted the developer's thumbnails.
+// config.AppDir now refuses to resolve the real one under test, so forgetting
+// this fails loudly rather than quietly.
+func TestMain(m *testing.M) {
 	config.SetAppName("goTApaper")
+
+	dir, err := os.MkdirTemp("", "gotapaper-api-test-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	config.SetAppDir(dir)
+
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func newTestServer(t *testing.T) (http.Handler, store.Store) {

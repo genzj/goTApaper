@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"testing"
 
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/sirupsen/logrus"
@@ -90,6 +91,16 @@ func AppDir() string {
 	}
 	if env := os.Getenv(appDirEnvVar()); env != "" {
 		return mustExpandAppDir(env)
+	}
+
+	// A test must never reach the user's real application directory. One
+	// did: an API test swept thumbnails under the real ~/.goTApaper against
+	// its own in-memory history, and deleted every one it did not know about.
+	// Failing loudly here turns any such test into an immediate, obvious
+	// failure instead of silent damage on a developer's machine.
+	if testing.Testing() {
+		panic("a test resolved the real application directory; " +
+			"call config.SetAppDir with a temporary directory first")
 	}
 
 	// An existing legacy directory wins over the platform default, so an
