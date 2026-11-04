@@ -11,7 +11,7 @@
 
 import { get, readable, writable, type Readable } from 'svelte/store'
 import { authorizedFetch, type DownloadJob, type DownloadOutcome, type LogEntry } from './api'
-import { token } from './auth'
+import { signedIn } from './auth'
 
 export const EVENT_LOG = 'log'
 export const EVENT_CONFIG_CHANGED = 'config-changed'
@@ -47,7 +47,7 @@ let reconnectTimer: number | undefined
  * across a daemon restart, which comes back on the same port.
  */
 export function connect(): void {
-  if (controller || !get(token)) return
+  if (controller || !get(signedIn)) return
 
   const current = new AbortController()
   controller = current

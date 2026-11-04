@@ -11,10 +11,12 @@
 //   * a browser opened from the tray arrives with a single-use ticket in the
 //     URL fragment, which is traded for the token here and then removed from
 //     the address bar -- no typing;
-//   * otherwise the page asks, and the user pastes the output of
-//     "goTApaper token".
+//   * opened directly on the machine the daemon runs on, the page needs no
+//     token at all unless api.require-token is set;
+//   * otherwise -- behind a reverse proxy, say -- the page asks, and the user
+//     pastes the output of "goTApaper token".
 
-import { writable } from 'svelte/store'
+import { derived, writable } from 'svelte/store'
 
 const STORAGE_KEY = 'gotapaper.api-token'
 
@@ -95,9 +97,35 @@ export function requestNativeSignIn(timeoutMs = 5000): Promise<string | null> {
   })
 }
 
+/**
+ * localAccess is true when the daemon lets this page in without a token: a
+ * request made directly from the machine the daemon runs on, with
+ * api.require-token left off. Behind a reverse proxy it stays false.
+ */
+export const localAccess = writable(false)
+
+/** signedIn reports whether the page can call the API. */
+export const signedIn = derived([token, localAccess], ([$token, $local]) => !!$token || $local)
+
+/**
+ * probeLocalAccess asks the daemon whether it accepts this page without a
+ * token, so the page need not ask for one it does not need.
+ */
+export async function probeLocalAccess(): Promise<boolean> {
+  try {
+    const resp = await fetch('/api/v1/status')
+    localAccess.set(resp.ok)
+    return resp.ok
+  } catch {
+    localAccess.set(false)
+    return false
+  }
+}
+
 /** signOut forgets the token, for a rejected one or on request. */
 export function signOut(): void {
   token.set('')
+  localAccess.set(false)
 }
 
 /**

@@ -33,7 +33,7 @@ func newTestServer(t *testing.T) (http.Handler, store.Store) {
 // rejects as a possible DNS-rebinding page. A real client names 127.0.0.1, so
 // the shim does the same for any request a test has not addressed itself.
 func testRoutes(h *handlers, tickets *ticketStore) http.Handler {
-	routes := h.routes(testToken, tickets)
+	routes := h.routes(testToken, tickets, nil)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host == "example.com" {
 			r.Host = LoopbackHost + ":8080"

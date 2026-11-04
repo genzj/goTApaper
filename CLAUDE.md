@@ -94,7 +94,8 @@ Every download — timer, config change, tray, API, CLI-via-daemon — goes thro
 
 **The boundary:** Wails (`gui/`) is for the OS-native experience only — the tray, the window, later global shortcuts. Every application feature, setting and event lives behind the API, for the interface, the CLI and curl alike (and potentially an MCP server later). `service/` holds those operations as plain Go methods on JSON-tagged types, deliberately free of HTTP; `api/` is a thin `net/http` adapter started by `gui` and `daemon` (`--api`, on by default). The interface is just another API client, with no Wails bindings — that is what makes "everything in the UI is doable from the CLI or curl" structural rather than a convention someone has to remember.
 
-- **Binds `127.0.0.1` only** (`api.LoopbackHost`) and requires a bearer token from `<app-dir>/api-token` (mode 0600), compared in constant time. Never make the bind address configurable: the API rewrites configuration and holds the user's provider API keys.
+- **Binds `127.0.0.1` only** (`api.LoopbackHost`). Never make the bind address configurable: the API rewrites configuration and holds the user's provider API keys.
+- **Bearer token** from `<app-dir>/api-token` (mode 0600), compared in constant time — required unless the request comes *directly* from this machine and `api.require-token` is off (the default). A request carrying a token is always checked; one carrying `Forwarded` / `X-Forwarded-For` / `X-Real-IP` / `X-Forwarded-Host` counts as remote, because a reverse proxy on this machine connects from 127.0.0.1 too (best-effort: it relies on the proxy setting one). Tokenless local access leans entirely on the bind, `requireLoopbackHost` and `requireLoopbackOrigin` — don't weaken those.
 - Secrets are redacted to `service.Redacted` on read; writing that sentinel back is a no-op, so a form can round-trip a channel without ever being told its API key.
 - `GET /api/v1/setting-definitions` and `GET /api/v1/channel-types` serve the in-code schemas, so a client validates and renders forms without its own copy of the vocabularies.
 - Deleting a channel template that is still inherited returns **409** with the dependent channel names; `POST /api/v1/channel-templates/{name}/inline` is the non-destructive way out.
@@ -104,11 +105,14 @@ Every download — timer, config change, tray, API, CLI-via-daemon — goes thro
 
 ### Signing in to the interface (`api/session.go`, `frontend/src/lib/auth.ts`)
 
-Safety first, then simplicity. The interface's static assets under `/ui/` are served **without** a token — the bundle holds no secrets — so the page can load far enough to ask. Every API call it then makes carries `Authorization: Bearer <token>`; cookies are **not** accepted as a credential (a browser sends a cookie on its own, which is what CSRF exploits). The token is kept in `localStorage`; with none stored the page asks, pointing at `goTApaper token`.
+The interface's static assets under `/ui/` are served **without** a token — the bundle holds no secrets. The page then gets access one of four ways:
 
-The tray signs in without typing by opening `/ui/#ticket=…` — a **single-use, 60-second ticket** the page trades for the token at `POST /api/v1/auth/ticket`, then strips from the address bar. The token itself must never ride in that URL: the browser is launched with it on its command line, readable by any local account via `ps`, and the token file is 0600 precisely to stop that. A ticket rather than a Wails binding, because the same path serves *Open in Browser*, where no binding can reach. The fragment never reaches the server, so tickets never appear in request logs.
+1. **goTApaper's own window:** the page posts `wails:runtime:ready` on the webview's native message channel (present only inside the window), Wails emits `WindowRuntimeReady`, and `gui.handOverToken` answers with `ExecJS(signInScript)`, which checks the page's origin before handing over the token. No Wails binding — a page served from 127.0.0.1 can't reliably reach one — and the token never appears in a URL. The window has no Sign out.
+2. **A browser opened from the tray:** `/ui/#ticket=…`, a **single-use, 60-second ticket** traded at `POST /api/v1/auth/ticket`, then stripped from the address bar. Never the token itself: the browser's launch command line is readable via `ps` by every local account.
+3. **Directly on this machine:** no token needed (unless `api.require-token`); the page probes `/status` without one.
+4. **Otherwise** (e.g. behind a reverse proxy): the page asks, pointing at `goTApaper token`, and keeps it in `localStorage`.
 
-With routes now open, `requireLoopbackHost` rejects any request whose `Host` is not loopback (DNS rebinding), and `requireLoopbackOrigin` rejects cross-origin writes. `localStorage` is per origin *including the port*, so with `api.port` at 0 the server first asks for the port it got last time (`<app-dir>/api-port`) — restarts keep the saved token and any open tab working.
+API calls send `Authorization: Bearer <token>` when there is one; cookies are **not** a credential (a browser sends them by itself — CSRF). `requireLoopbackHost` rejects non-loopback `Host`s (DNS rebinding) and `requireLoopbackOrigin` cross-origin writes. `localStorage` is per origin *including the port*, so with `api.port` at 0 the server first asks for the port it got last time (`<app-dir>/api-port`).
 
 ### Desktop interface (`gui/`) and the headless daemon
 
