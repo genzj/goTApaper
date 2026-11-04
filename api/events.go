@@ -92,10 +92,29 @@ func (h *eventHub) Subscribe() (<-chan Event, func()) {
 	return ch, func() {
 		once.Do(func() {
 			h.mu.Lock()
+			_, open := h.subscribers[id]
 			delete(h.subscribers, id)
 			h.mu.Unlock()
-			close(ch)
+			// Close may already have closed it.
+			if open {
+				close(ch)
+			}
 		})
+	}
+}
+
+// Close ends every subscription, which ends every open stream. It is called
+// when the server shuts down: a stream never finishes by itself, and
+// http.Server.Shutdown waits for every request in flight, so without this a
+// connected interface held up every stop and restart for the full timeout.
+func (h *eventHub) Close() {
+	h.mu.Lock()
+	subscribers := h.subscribers
+	h.subscribers = map[int]chan Event{}
+	h.mu.Unlock()
+
+	for _, ch := range subscribers {
+		close(ch)
 	}
 }
 

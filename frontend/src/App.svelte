@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api } from './lib/api'
-  import { redeemTicket, signOut, token } from './lib/auth'
+  import { isNative, redeemTicket, requestNativeSignIn, signOut, token } from './lib/auth'
   import { connect, connected, disconnect } from './lib/events'
   import SignIn from './views/SignIn.svelte'
   import Wallpaper from './views/Wallpaper.svelte'
@@ -33,11 +33,12 @@
     window.location.hash = id
   }
 
-  // A ticket from the tray is traded before deciding whether to ask for the
-  // token, so opening from the tray never flashes the sign-in page.
+  // Signed in before deciding whether to ask for the token: natively in
+  // goTApaper's own window, or with a ticket in a browser opened from the
+  // tray, so neither flashes the sign-in page.
   let ready = $state(false)
   let notice = $state('')
-  redeemTicket()
+  ;(isNative ? requestNativeSignIn() : redeemTicket())
     .catch((e) => (notice = e instanceof Error ? e.message : String(e)))
     .finally(() => (ready = true))
 
@@ -74,6 +75,12 @@
       return
     }
     disconnect()
+    if (isNative) {
+      // The application's own window is never left signed out: a rejected
+      // token -- the daemon was reinstalled, say -- is simply fetched again.
+      void requestNativeSignIn()
+      return
+    }
     if (wasSignedIn && !notice) notice = 'The daemon no longer accepts the saved token.'
   })
 </script>
@@ -103,6 +110,7 @@
       {/if}
     </span>
     <button class="small" onclick={restart} disabled={restarting}>Restart daemon</button>
+    {#if !isNative}
     <button
       class="small"
       title="Forget the saved token in this browser"
@@ -111,12 +119,15 @@
         signOut()
       }}>Sign out</button
     >
+    {/if}
   {/if}
 </header>
 
 <main>
   {#if !ready}
     <p class="muted">Loading…</p>
+  {:else if !$token && isNative}
+    <p class="muted">Signing in…</p>
   {:else if !$token}
     <SignIn {notice} />
   {:else if active === 'wallpaper'}

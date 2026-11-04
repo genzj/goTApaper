@@ -5,10 +5,12 @@
 // on every visit. Local storage is scoped to the origin, port included, which
 // is why the daemon tries to keep the same port across restarts.
 //
-// There are two ways in:
-//   * the tray opens the page with a single-use ticket in the URL fragment,
-//     which is traded for the token here and then removed from the address
-//     bar -- no typing;
+// There are three ways in:
+//   * in goTApaper's own window, the application hands the token over
+//     natively on every page load, so that window never asks;
+//   * a browser opened from the tray arrives with a single-use ticket in the
+//     URL fragment, which is traded for the token here and then removed from
+//     the address bar -- no typing;
 //   * otherwise the page asks, and the user pastes the output of
 //     "goTApaper token".
 
@@ -36,6 +38,62 @@ token.subscribe((value) => {
     // See read.
   }
 })
+
+type NativePost = (message: string) => void
+
+/**
+ * nativeChannel returns the webview's native message channel, which exists
+ * only inside goTApaper's own window: WebView2 on Windows, WebKit elsewhere.
+ * A browser has neither.
+ */
+function nativeChannel(): NativePost | null {
+  const w = window as unknown as {
+    chrome?: { webview?: { postMessage?: NativePost } }
+    webkit?: { messageHandlers?: { external?: { postMessage?: NativePost } } }
+  }
+  const webview = w.chrome?.webview
+  if (webview?.postMessage) return webview.postMessage.bind(webview)
+  const external = w.webkit?.messageHandlers?.external
+  if (external?.postMessage) return external.postMessage.bind(external)
+  return null
+}
+
+/** True inside goTApaper's own window, where signing in is automatic. */
+export const isNative = nativeChannel() !== null
+
+/**
+ * requestNativeSignIn asks the application for the token, inside its own
+ * window, resolving with it -- or with null outside the window, or if no
+ * answer comes.
+ *
+ * The page announces itself with the message Wails' own runtime uses to say a
+ * page is ready, and the application answers by running a script that hands
+ * the token over. That script checks the page's origin first, so only the
+ * interface this process serves can receive it.
+ */
+export function requestNativeSignIn(timeoutMs = 5000): Promise<string | null> {
+  const post = nativeChannel()
+  if (!post) return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      window.removeEventListener('gotapaper:native-sign-in', onSignIn)
+      resolve(null)
+    }, timeoutMs)
+
+    function onSignIn() {
+      window.clearTimeout(timer)
+      window.removeEventListener('gotapaper:native-sign-in', onSignIn)
+      const handed = (window as unknown as { __gotapaperNative?: { token?: string } })
+        .__gotapaperNative?.token
+      if (handed) token.set(handed)
+      resolve(handed ?? null)
+    }
+
+    window.addEventListener('gotapaper:native-sign-in', onSignIn)
+    post('wails:runtime:ready')
+  })
+}
 
 /** signOut forgets the token, for a rejected one or on request. */
 export function signOut(): void {
