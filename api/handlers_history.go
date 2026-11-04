@@ -92,7 +92,7 @@ func (h *handlers) reapplyHistoryEntry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.downloader.Reapply(id); err != nil {
+	if err := h.downloader.Reapply(id, "api"); err != nil {
 		writeStoreError(w, err)
 		return
 	}

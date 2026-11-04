@@ -54,7 +54,7 @@ func (h *handlers) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.downloader.Refresh(body.Channels, body.Force); err != nil {
+	if err := h.downloader.Refresh(body.Channels, body.Force, "api"); err != nil {
 		writeStoreError(w, err)
 		return
 	}

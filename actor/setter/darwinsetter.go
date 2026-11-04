@@ -70,6 +70,17 @@ func (_ DarwinSetter) Set(file string) error {
 		return err
 	}
 
+	// At info, with digests: the system caches what it renders per path, and
+	// these slots reuse two paths. If the desktop shows a different picture
+	// from the one applied, comparing these digests with earlier lines tells
+	// whether macOS is showing an older picture that once had this path.
+	logrus.WithFields(logrus.Fields{
+		"slot":       wallpaperPath,
+		"digest":     util.FileDigest(wallpaperPath),
+		"sourceFile": file,
+		"before":     paths,
+	}).Info("setting the macOS wallpaper")
+
 	if _, err := runCommand(
 		"osascript",
 		"-e",
@@ -77,6 +88,10 @@ func (_ DarwinSetter) Set(file string) error {
 			strconv.Quote(wallpaperPath),
 	); err != nil {
 		return err
+	}
+
+	if after, err := currentWallpapers(); err == nil {
+		logrus.WithField("desktops", after).Info("macOS reports these wallpapers")
 	}
 
 	// Drop the other slot's file. The system is no longer displaying it, and

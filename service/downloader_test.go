@@ -70,10 +70,10 @@ func idle(d *Downloader) func() bool {
 func TestDownloaderRefusesAUserRequestWhileBusy(t *testing.T) {
 	d, f, _ := newTestDownloader(t)
 
-	if err := d.Refresh(nil, false); err != nil {
+	if err := d.Refresh(nil, false, "test"); err != nil {
 		t.Fatalf("first Refresh: %v", err)
 	}
-	if err := d.Refresh(nil, false); !errors.Is(err, ErrBusy) {
+	if err := d.Refresh(nil, false, "test"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("second Refresh = %v, want ErrBusy", err)
 	}
 
@@ -96,14 +96,14 @@ func TestDownloaderRefusesAUserRequestWhileBusy(t *testing.T) {
 func TestDownloaderRunsOneScheduledRefreshAfterTheCurrentDownload(t *testing.T) {
 	d, f, _ := newTestDownloader(t)
 
-	if err := d.Refresh(nil, false); err != nil {
+	if err := d.Refresh(nil, false, "test"); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
 	// Three scheduled triggers while busy -- a config change and two timer
 	// ticks, say -- all want the same thing, so they coalesce into one.
-	d.Schedule()
-	d.Schedule()
-	d.Schedule()
+	d.Schedule("test")
+	d.Schedule("test")
+	d.Schedule("test")
 
 	f.release <- struct{}{} // finish the user's refresh
 	waitFor(t, "the scheduled refresh to start", func() bool {
@@ -124,7 +124,7 @@ func TestDownloaderRunsOneScheduledRefreshAfterTheCurrentDownload(t *testing.T) 
 func TestDownloaderReapplyChecksTheEntryBeforeStarting(t *testing.T) {
 	d, f, s := newTestDownloader(t)
 
-	if err := d.Reapply(404); !errors.Is(err, store.ErrNotFound) {
+	if err := d.Reapply(404, "test"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Reapply(missing) = %v, want ErrNotFound", err)
 	}
 
@@ -132,7 +132,7 @@ func TestDownloaderReapplyChecksTheEntryBeforeStarting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AppendWallpaperHistory: %v", err)
 	}
-	if err := d.Reapply(id); err == nil {
+	if err := d.Reapply(id, "test"); err == nil {
 		t.Fatal("Reapply accepted an entry with no URL to download")
 	}
 
@@ -163,7 +163,7 @@ func TestDownloaderRecordsTheOutcomeAndNotifies(t *testing.T) {
 		mu.Unlock()
 	})
 
-	if err := d.Reapply(id); err != nil {
+	if err := d.Reapply(id, "test"); err != nil {
 		t.Fatalf("Reapply: %v", err)
 	}
 	close(f.release)

@@ -57,18 +57,19 @@ func addDaemonFlags(flags *pflag.FlagSet) {
 // It only ever schedules: the downloader decides whether that starts a
 // download now or after the one in flight, so the timer, a configuration
 // change, the tray and the API can never run two downloads at once.
-func runSchedule(wake <-chan struct{}, d *service.Downloader) {
+func runSchedule(wake <-chan string, d *service.Downloader) {
 	go func() {
 		for {
 			interval := config.GetInt(config.KeyDaemonInterval)
 			logrus.WithField("interval", interval).Debug("going to sleep until the next refresh")
+			reason := "timer"
 			select {
 			case <-time.After(time.Duration(interval) * time.Second):
 				logrus.WithField("interval", interval).Debug("awake from sleep")
-			case <-wake:
-				logrus.Debug("woken before the interval elapsed")
+			case reason = <-wake:
+				logrus.WithField("reason", reason).Debug("woken before the interval elapsed")
 			}
-			d.Schedule()
+			d.Schedule(reason)
 		}
 	}()
 }
@@ -146,12 +147,14 @@ func startRefreshLoop(lc api.Lifecycle, onChange func(service.DownloadEvent)) *s
 	// succession want one refresh, and an observer must never stall waiting
 	// for the schedule to come round, which it used to do for as long as a
 	// download took.
-	wake := make(chan struct{}, 1)
+	wake := make(chan string, 1)
 	config.Observe("*", func(key string, old, new interface{}) {
-		logrus.WithField("key", key).WithField("old", old).WithField("new", new).Debug("config change triggers refresh")
+		// At info, with the key: a refresh it triggers changes the wallpaper,
+		// and the log has to say why.
+		logrus.WithField("key", key).Info("configuration changed, refreshing")
 		publishConfigChange(key)
 		select {
-		case wake <- struct{}{}:
+		case wake <- "config change: " + key:
 		default:
 		}
 	})
@@ -160,7 +163,7 @@ func startRefreshLoop(lc api.Lifecycle, onChange func(service.DownloadEvent)) *s
 	// Sweep once at startup, so a cap lowered while the daemon was stopped
 	// takes effect without waiting for the next refresh.
 	sweepHistory(logrus.WithField("stage", "startup"))
-	d.Schedule()
+	d.Schedule("startup")
 	return d
 }
 
