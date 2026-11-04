@@ -253,6 +253,9 @@ type Store interface {
 	WallpaperHistoryCount() (int, error)
 	// WallpaperHistoryEntryByID returns one row, or ErrNotFound.
 	WallpaperHistoryEntryByID(id int64) (WallpaperHistoryEntry, error)
+	// WallpaperHistoryEntryByURL returns the entry for a picture, or
+	// ErrNotFound. There is at most one per URL.
+	WallpaperHistoryEntryByURL(url string) (WallpaperHistoryEntry, error)
 	// MarkReapplied records that an entry was applied again: it becomes the
 	// newest entry, keeping when it was first applied, rather than a duplicate
 	// being appended. A non-empty thumbPath replaces the entry's thumbnail,

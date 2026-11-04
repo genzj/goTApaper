@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +32,7 @@ func seedHistory(t *testing.T, s store.Store, count int) []int64 {
 		id, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
 			ChannelName:  "bing",
 			ChannelType:  "bing-wallpaper",
-			URL:          "https://example.test/pic.jpg",
+			URL:          fmt.Sprintf("https://example.test/pic-%d.jpg", i),
 			Title:        "Picture",
 			Format:       "jpeg",
 			DownloadTime: int64(1000 + i),

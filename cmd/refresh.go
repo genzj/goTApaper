@@ -284,9 +284,9 @@ func applyPicture(
 // recordHistory records a wallpaper that has just been applied, writes its
 // thumbnail, and enforces the entry cap.
 //
-// A re-applied picture updates the entry it came from instead of appending a
-// second one: the history lists pictures, and one picture applied twice is one
-// entry applied twice, not two entries.
+// A picture already in the history -- re-applied, or downloaded again -- updates
+// its entry instead of appending a second one: the history lists pictures,
+// and one picture applied twice is one entry applied twice, not two entries.
 //
 // Every failure here is logged and swallowed. The wallpaper is already set,
 // which is the user's actual goal; losing a history row is a far smaller
@@ -296,6 +296,19 @@ func recordHistory(
 	reapplied *store.WallpaperHistoryEntry,
 ) {
 	now := time.Now().Unix()
+
+	// A fresh download of a picture already in the history -- a forced
+	// refresh, or a provider serving the same photo again -- is that picture
+	// applied again, not a new one. Pictures are matched by URL only: nothing
+	// compares the images, so one picture under two URLs is still two entries.
+	if reapplied == nil && meta.URL != "" {
+		if existing, err := currentStore().WallpaperHistoryEntryByURL(meta.URL); err == nil {
+			l.WithField("entry", existing.ID).Info(
+				"this picture is already in the history, updating its entry",
+			)
+			reapplied = &existing
+		}
+	}
 
 	if reapplied != nil {
 		if markReapplied(l, img, wallpaperFileName, reapplied, now) {
