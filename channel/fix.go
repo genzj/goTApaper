@@ -46,7 +46,7 @@ func (fixedPictureProvider) Download(setting Settings) (*bytes.Reader, image.Ima
 	}
 
 	if parsedURL.Scheme == "file" {
-		finalURL = parsedURL.Path
+		finalURL = util.FileURLPath(parsedURL)
 		raw, img, format, err := util.DecodeFromFile(finalURL)
 		meta.Format = format
 		return raw, img, meta, err

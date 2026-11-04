@@ -12,9 +12,10 @@ import (
 // entry and previewing one both use, so they agree on what a URL means.
 func FetchPicture(rawURL string) (*bytes.Reader, image.Image, string, error) {
 	if parsed, err := url.Parse(rawURL); err == nil && parsed.Scheme == "file" {
-		raw, img, format, err := DecodeFromFile(parsed.Path)
+		path := FileURLPath(parsed)
+		raw, img, format, err := DecodeFromFile(path)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("cannot read %s again: %w", parsed.Path, err)
+			return nil, nil, "", fmt.Errorf("cannot read %s again: %w", path, err)
 		}
 		return raw, img, format, nil
 	}
