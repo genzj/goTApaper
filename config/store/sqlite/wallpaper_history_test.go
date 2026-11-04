@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -15,9 +16,10 @@ func appendEntry(t *testing.T, s *Store, channelName string, at int64) int64 {
 	t.Helper()
 
 	id, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
-		ChannelName:  channelName,
-		ChannelType:  "bing-wallpaper",
-		URL:          "https://example.test/" + channelName,
+		ChannelName: channelName,
+		ChannelType: "bing-wallpaper",
+		// Unique per call: there is one entry per URL.
+		URL:          fmt.Sprintf("https://example.test/%s/%d", channelName, at),
 		Title:        "a title",
 		DownloadTime: at,
 		ThumbPath:    "/thumbs/" + channelName + ".jpg",
@@ -28,27 +30,46 @@ func appendEntry(t *testing.T, s *Store, channelName string, at int64) int64 {
 	return id
 }
 
-func TestAppendWallpaperHistoryIsALogNotAnUpsert(t *testing.T) {
+func TestOneHistoryEntryPerURL(t *testing.T) {
 	s := openMemory(t)
 
-	// The same channel applied twice is two events: this is a log, not a
-	// latest-value table.
-	appendEntry(t, s, "bing", 100)
-	appendEntry(t, s, "bing", 200)
-
-	count, err := s.WallpaperHistoryCount()
-	if err != nil {
-		t.Fatalf("WallpaperHistoryCount: %v", err)
+	entry := store.WallpaperHistoryEntry{
+		ChannelName: "bing", URL: "https://example.test/same.jpg", DownloadTime: 100,
 	}
-	if count != 2 {
-		t.Fatalf("WallpaperHistoryCount() = %d, want 2", count)
+	if _, err := s.AppendWallpaperHistory(entry); err != nil {
+		t.Fatalf("first AppendWallpaperHistory: %v", err)
+	}
+
+	// The same picture applied again must update its entry (MarkReapplied),
+	// never append a second: the unique index makes a duplicate impossible.
+	entry.DownloadTime = 200
+	if _, err := s.AppendWallpaperHistory(entry); err == nil {
+		t.Fatal("a second entry for the same URL was accepted")
+	}
+
+	got, err := s.WallpaperHistoryEntryByURL("https://example.test/same.jpg")
+	if err != nil {
+		t.Fatalf("WallpaperHistoryEntryByURL: %v", err)
+	}
+	if got.DownloadTime != 100 {
+		t.Errorf("DownloadTime = %d, want the original 100", got.DownloadTime)
+	}
+
+	// Entries with no URL are exempt; legacy imports can have several.
+	for range 2 {
+		if _, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{ChannelName: "old"}); err != nil {
+			t.Fatalf("an entry with no URL was refused: %v", err)
+		}
+	}
+	if _, err := s.WallpaperHistoryEntryByURL(""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("WallpaperHistoryEntryByURL(\"\") = %v, want ErrNotFound", err)
 	}
 }
 
 func TestLastAppliedURLIsTheNewestEntryOfThatChannel(t *testing.T) {
 	s := openMemory(t)
 
-	appendEntry(t, s, "bing", 100) // https://example.test/bing
+	appendEntry(t, s, "bing", 100) // https://example.test/bing/100
 	if _, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
 		ChannelName: "bing", URL: "https://example.test/newer", DownloadTime: 200,
 	}); err != nil {
@@ -99,7 +120,7 @@ func TestLastAppliedURLSurvivesPruningToOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LastAppliedURL: %v", err)
 	}
-	if got != "https://example.test/bing" {
+	if got != "https://example.test/bing/200" {
 		t.Fatalf("LastAppliedURL = %q after pruning", got)
 	}
 }
@@ -440,7 +461,7 @@ func TestMarkReappliedUpdatesTheEntryInsteadOfDuplicatingIt(t *testing.T) {
 		t.Errorf("newest entry = %d, want the re-applied %d", list[0].ID, old)
 	}
 	url, _ := s.LastAppliedURL("bing")
-	if url != "https://example.test/bing" {
+	if url != "https://example.test/bing/100" {
 		t.Errorf("LastAppliedURL = %q", url)
 	}
 }

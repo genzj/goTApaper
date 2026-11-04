@@ -77,6 +77,11 @@ func importHistoryFile(s store.Store, path string) error {
 				continue
 			}
 
+			// One entry per picture: two legacy keys can name the same URL.
+			if _, err := tx.WallpaperHistoryEntryByURL(h.History); err == nil {
+				continue
+			}
+
 			if _, err := tx.AppendWallpaperHistory(store.WallpaperHistoryEntry{
 				ChannelName:  owner.Name,
 				ChannelType:  owner.Type,

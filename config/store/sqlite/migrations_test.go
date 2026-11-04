@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+
+	"github.com/genzj/goTApaper/config/store"
 )
 
 // TestMigrationsAreWellFormed validates the embedded migration set at test
@@ -166,5 +168,68 @@ func TestMigration3CarriesDownloadHistoryIntoTheWallpaperHistory(t *testing.T) {
 	}
 	if tables != 0 {
 		t.Error("download_history survived the migration")
+	}
+}
+
+func TestMigration5MergesDuplicateURLs(t *testing.T) {
+	db, path := openAtVersion(t, 4)
+
+	for _, stmt := range []string{
+		// Three applications of one picture: the oldest has the title, the
+		// middle the thumbnail, the newest nothing but its time.
+		`INSERT INTO wallpaper_history (id, channel_name, url, title, download_time, times_applied)
+		 VALUES (1, 'ng', 'https://example.invalid/a.jpg', 'Title', 100, 1)`,
+		`INSERT INTO wallpaper_history (id, channel_name, url, thumb_path, download_time, times_applied)
+		 VALUES (2, 'ng', 'https://example.invalid/a.jpg', '/thumbs/a.jpg', 200, 2)`,
+		`INSERT INTO wallpaper_history (id, channel_name, url, download_time)
+		 VALUES (3, 'ng', 'https://example.invalid/a.jpg', 300)`,
+		// A picture applied once is left alone.
+		`INSERT INTO wallpaper_history (id, channel_name, url, download_time)
+		 VALUES (4, 'bing', 'https://example.invalid/b.jpg', 150)`,
+		// Entries with no URL cannot be told apart and are not merged.
+		`INSERT INTO wallpaper_history (id, channel_name, url, download_time) VALUES (5, 'old', '', 50)`,
+		`INSERT INTO wallpaper_history (id, channel_name, url, download_time) VALUES (6, 'old', '', 60)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seeding: %v\n%s", err, stmt)
+		}
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	count, _ := s.WallpaperHistoryCount()
+	if count != 4 {
+		t.Fatalf("%d entries after merging, want 4 (a, b and the two without URLs)", count)
+	}
+
+	// Merged into the newest, which deduplication already compared against.
+	got, err := s.WallpaperHistoryEntryByURL("https://example.invalid/a.jpg")
+	if err != nil {
+		t.Fatalf("WallpaperHistoryEntryByURL: %v", err)
+	}
+	if got.ID != 3 {
+		t.Errorf("kept entry %d, want the newest, 3", got.ID)
+	}
+	if got.FirstAppliedTime != 100 || got.DownloadTime != 300 {
+		t.Errorf("first/last = %d/%d, want 100/300", got.FirstAppliedTime, got.DownloadTime)
+	}
+	if got.TimesApplied != 4 {
+		t.Errorf("TimesApplied = %d, want 1+2+1 = 4", got.TimesApplied)
+	}
+	// What the kept entry lacked is filled in from the ones merged into it.
+	if got.Title != "Title" || got.ThumbPath != "/thumbs/a.jpg" {
+		t.Errorf("title/thumb = %q/%q, want them carried over", got.Title, got.ThumbPath)
+	}
+
+	// From here on a duplicate is refused outright.
+	if _, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
+		ChannelName: "ng", URL: "https://example.invalid/a.jpg",
+	}); err == nil {
+		t.Error("a duplicate URL was accepted after the migration")
 	}
 }

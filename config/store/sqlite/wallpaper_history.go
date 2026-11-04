@@ -124,6 +124,22 @@ func (s *Store) MarkReapplied(id, at int64, filePath, thumbPath string) error {
 	return nil
 }
 
+// WallpaperHistoryEntryByURL returns the entry for a picture. A unique index
+// keeps it to one entry per URL (migration 0005).
+func (s *Store) WallpaperHistoryEntryByURL(url string) (store.WallpaperHistoryEntry, error) {
+	if url == "" {
+		return store.WallpaperHistoryEntry{}, fmt.Errorf("%w: a history entry with no URL", store.ErrNotFound)
+	}
+	row := s.q().QueryRow(
+		"SELECT "+wallpaperHistoryColumns+" FROM wallpaper_history WHERE url = ?", url,
+	)
+	e, err := scanWallpaperHistory(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.WallpaperHistoryEntry{}, fmt.Errorf("%w: a history entry for %s", store.ErrNotFound, url)
+	}
+	return e, err
+}
+
 // LastAppliedURL returns the URL of the newest entry for a channel instance.
 //
 // This is the whole of deduplication. It used to be a separate
