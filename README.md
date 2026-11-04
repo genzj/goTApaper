@@ -22,8 +22,7 @@ of new wallpaper sources and desktop environment support.
 ├── config/               # Configuration management and defaults
 ├── contrib/              # Build and packaging resources
 ├── data/                 # Asset management
-├── examples/             # Example configurations and assets
-├── generate/             # Code generation utilities
+├── examples/             # Example configuration and icons, embedded with //go:embed
 ├── history/             # Download history tracking
 ├── install/             # Installation and auto-start functionality
 ├── util/                # Common utilities

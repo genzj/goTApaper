@@ -86,8 +86,6 @@ out/
 /config.yaml
 history.json
 
-# auto generated vfs files
-/data/*_vfsdata.go
 
 # GoLand files
 .idea/
