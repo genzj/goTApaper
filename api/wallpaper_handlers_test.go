@@ -17,6 +17,7 @@ import (
 
 	"github.com/genzj/goTApaper/config/store"
 	"github.com/genzj/goTApaper/service"
+	"github.com/genzj/goTApaper/util"
 )
 
 // seedHistory records entries so the history routes have something to serve.
@@ -415,7 +416,7 @@ func TestLoadPreviewSavesAThumbnailWithoutApplying(t *testing.T) {
 	pic := filepath.Join(t.TempDir(), "pic.jpg")
 	writeJPEG(t, pic, 1200, 800)
 	id, err := s.AppendWallpaperHistory(store.WallpaperHistoryEntry{
-		ChannelName: "fixed", URL: "file://" + pic, DownloadTime: 100,
+		ChannelName: "fixed", URL: util.PathFileURL(pic), DownloadTime: 100,
 	})
 	if err != nil {
 		t.Fatalf("AppendWallpaperHistory: %v", err)
