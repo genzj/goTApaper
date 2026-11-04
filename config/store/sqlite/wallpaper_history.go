@@ -254,6 +254,29 @@ func (s *Store) WallpaperHistoryBeyond(keepAtMost int) ([]string, error) {
 	return paths, rows.Err()
 }
 
+// SetThumbnail records a thumbnail for an entry and returns the one it
+// replaces.
+func (s *Store) SetThumbnail(id int64, path string) (string, error) {
+	var previous string
+	err := s.Tx(func(tx store.Store) error {
+		inner := tx.(*Store)
+		err := inner.q().QueryRow(
+			"SELECT COALESCE(thumb_path, '') FROM wallpaper_history WHERE id = ?", id,
+		).Scan(&previous)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: wallpaper history entry %d", store.ErrNotFound, id)
+		}
+		if err != nil {
+			return err
+		}
+		_, err = inner.q().Exec(
+			"UPDATE wallpaper_history SET thumb_path = ? WHERE id = ?", nullIfEmpty(path), id,
+		)
+		return err
+	})
+	return previous, err
+}
+
 // ThumbnailPaths returns every thumbnail path a row still references.
 func (s *Store) ThumbnailPaths() ([]string, error) {
 	rows, err := s.q().Query(

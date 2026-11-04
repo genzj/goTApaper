@@ -166,6 +166,21 @@ This runs automatically after every refresh; the command is for doing it now.`,
 	},
 }
 
+var historyPreviewCmd = &cobra.Command{
+	Use:   "preview <id>",
+	Short: "Download a recorded wallpaper's picture and save its thumbnail, without applying it",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		id := mustParseID(args[0])
+		item, err := wallpaperService().LoadPreview(id)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("thumbnail saved to %s\n", item.ThumbPath)
+	},
+}
+
 var historyDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Remove one history entry and its thumbnail",
@@ -206,7 +221,7 @@ func init() {
 
 	historyCmd.AddCommand(
 		historyListCmd, historyShowCmd, historyReapplyCmd,
-		historyPruneCmd, historyDeleteCmd,
+		historyPruneCmd, historyDeleteCmd, historyPreviewCmd,
 	)
 	RootCmd.AddCommand(historyCmd)
 }

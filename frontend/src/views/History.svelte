@@ -7,7 +7,7 @@
     type SweepResult,
   } from '../lib/api'
   import AuthImage from '../lib/AuthImage.svelte'
-  import { bytes, unixTime } from '../lib/format'
+  import { bytes, stamp } from '../lib/format'
   import { downloading, lastDownload } from '../lib/events'
 
   const PAGE = 24
@@ -50,6 +50,24 @@
       error = `${done.error} — the provider may no longer serve this picture.`
     }
   })
+
+  // Entries whose preview is being fetched, so each button shows its own
+  // progress and cannot be clicked twice.
+  let previewing = $state<Record<number, boolean>>({})
+
+  async function loadPreview(entry: HistoryEntry) {
+    error = ''
+    previewing[entry.id] = true
+    try {
+      await api.loadPreview(entry.id)
+      await load()
+    } catch (e) {
+      error =
+        (e instanceof Error ? e.message : String(e)) +
+        ' — the provider may no longer serve this picture.'
+    }
+    previewing[entry.id] = false
+  }
 
   async function remove(entry: HistoryEntry) {
     error = ''
@@ -110,21 +128,28 @@
   <div class="grid">
     {#each history.entries as entry (entry.id)}
       <div class="card item">
-        {#if entry.thumbPath}
+        {#if entry.hasThumbnail}
           <AuthImage path={`/history/${entry.id}/thumbnail`} alt={entry.title ?? ''} />
         {:else}
-          <div class="noimage muted">no thumbnail</div>
+          <div class="noimage muted">
+            {#if entry.url}
+              <button onclick={() => loadPreview(entry)} disabled={previewing[entry.id]}>
+                {previewing[entry.id] ? 'Loading…' : 'Load preview'}
+              </button>
+            {:else}
+              no preview
+            {/if}
+          </div>
         {/if}
         <div class="meta">
           <strong>{entry.title || '(untitled)'}</strong>
           <span class="muted">{entry.credit || ''}</span>
           <span class="muted">{entry.channelName}</span>
-          <span class="muted">Applied {unixTime(entry.downloadTime)}</span>
-          {#if entry.timesApplied > 1}
-            <span class="muted">
-              First applied {unixTime(entry.firstAppliedTime)} · {entry.timesApplied} times
-            </span>
-          {/if}
+          <span class="muted">First applied {stamp(entry.firstAppliedTime)}</span>
+          <span class="muted">
+            Last applied {stamp(entry.downloadTime)}{#if entry.timesApplied > 1}
+              · {entry.timesApplied} times{/if}
+          </span>
           {#if entry.url}
             <span class="mono muted break">{entry.url}</span>
           {/if}
