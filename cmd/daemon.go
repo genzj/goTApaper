@@ -99,6 +99,9 @@ func startAPIServer(d *service.Downloader, lc api.Lifecycle) {
 		Logs:       service.NewLogs(),
 		Version:    Version,
 		Lifecycle:  lc,
+		RequireToken: func() bool {
+			return config.GetBool(config.KeyAPIRequireToken)
+		},
 	})
 	if err != nil {
 		logrus.WithError(err).Error("cannot start the API server, continuing without it")

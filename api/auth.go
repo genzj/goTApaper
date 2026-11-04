@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -89,9 +90,30 @@ func readToken(path string) (string, error) {
 }
 
 // requireToken wraps a handler with bearer token authentication.
-func requireToken(token string, next http.Handler) http.Handler {
+//
+// A request made directly from this machine may go without a token unless
+// strict says otherwise (api.require-token). Everything else needs it:
+//
+//   - a request carrying a token is always checked, so a wrong one is reported
+//     rather than silently ignored;
+//   - a request a proxy forwarded counts as remote, whatever address it
+//     arrives from. A reverse proxy on this machine connects from 127.0.0.1,
+//     so the source address alone would let through everyone the proxy does.
+//     This is best-effort: it relies on the proxy setting a forwarding header,
+//     which is why it is worth setting api.require-token behind one.
+//
+// Tokenless local access leans on the other guards: the bind admits nothing
+// from other machines, requireLoopbackHost turns away DNS-rebinding pages, and
+// requireLoopbackOrigin turns away cross-origin writes, which is what stops a
+// web page in the user's browser from driving the API.
+func requireToken(token string, strict func() bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		presented, ok := bearerToken(r)
+		if !ok && !strict() && isDirectLocalRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Constant time, so a wrong token cannot be narrowed down by timing
 		// the response.
 		if !ok || subtle.ConstantTimeCompare([]byte(presented), []byte(token)) != 1 {
@@ -112,6 +134,25 @@ func requireToken(token string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// forwardingHeaders mark a request a proxy passed on.
+var forwardingHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Real-Ip"}
+
+// isDirectLocalRequest reports whether a request came straight from this
+// machine rather than through a proxy.
+func isDirectLocalRequest(r *http.Request) bool {
+	for _, h := range forwardingHeaders {
+		if r.Header.Get(h) != "" {
+			return false
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // describeCredential says whether a token was offered at all, which is the

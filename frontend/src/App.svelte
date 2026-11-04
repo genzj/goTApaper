@@ -1,6 +1,14 @@
 <script lang="ts">
   import { api } from './lib/api'
-  import { isNative, redeemTicket, requestNativeSignIn, signOut, token } from './lib/auth'
+  import {
+    isNative,
+    probeLocalAccess,
+    redeemTicket,
+    requestNativeSignIn,
+    signOut,
+    signedIn,
+    token,
+  } from './lib/auth'
   import { connect, connected, disconnect } from './lib/events'
   import SignIn from './views/SignIn.svelte'
   import Wallpaper from './views/Wallpaper.svelte'
@@ -40,6 +48,10 @@
   let notice = $state('')
   ;(isNative ? requestNativeSignIn() : redeemTicket())
     .catch((e) => (notice = e instanceof Error ? e.message : String(e)))
+    // With no token yet, the daemon may not need one: see probeLocalAccess.
+    .then(async () => {
+      if (!$token) await probeLocalAccess()
+    })
     .finally(() => (ready = true))
 
   let restarting = $state(false)
@@ -69,7 +81,7 @@
   let wasSignedIn = false
   $effect(() => {
     if (!ready) return
-    if ($token) {
+    if ($signedIn) {
       wasSignedIn = true
       connect()
       return
@@ -89,7 +101,7 @@
 
 <header>
   <h1>goTApaper</h1>
-  {#if $token}
+  {#if $signedIn}
     <nav>
       {#each tabs as tab (tab.id)}
         <button
@@ -110,13 +122,16 @@
       {/if}
     </span>
     <button class="small" onclick={restart} disabled={restarting}>Restart daemon</button>
-    {#if !isNative}
+    {#if !isNative && $token}
     <button
       class="small"
       title="Forget the saved token in this browser"
-      onclick={() => {
+      onclick={async () => {
         notice = 'Signed out.'
         signOut()
+        // The token is forgotten either way; if the daemon lets this page in
+        // without one, it simply carries on.
+        await probeLocalAccess()
       }}>Sign out</button
     >
     {/if}
@@ -126,9 +141,9 @@
 <main>
   {#if !ready}
     <p class="muted">Loading…</p>
-  {:else if !$token && isNative}
+  {:else if !$signedIn && isNative}
     <p class="muted">Signing in…</p>
-  {:else if !$token}
+  {:else if !$signedIn}
     <SignIn {notice} />
   {:else if active === 'wallpaper'}
     <Wallpaper />

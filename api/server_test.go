@@ -25,7 +25,7 @@ import (
 // it would be remotely reachable, so the listening address is asserted rather
 // than assumed.
 func TestStartBindsLoopbackOnly(t *testing.T) {
-	srv, _ := startRealServer(t)
+	srv, _ := startRealServer(t, nil)
 
 	host, port, err := net.SplitHostPort(srv.Addr())
 	if err != nil {
@@ -54,7 +54,7 @@ func TestTokenFileIsOwnerOnly(t *testing.T) {
 		t.Skip("permission bits are not modelled on Windows")
 	}
 
-	_, dir := startRealServer(t)
+	_, dir := startRealServer(t, nil)
 
 	info, err := os.Stat(TokenPath(dir))
 	if err != nil {
@@ -68,7 +68,7 @@ func TestTokenFileIsOwnerOnly(t *testing.T) {
 }
 
 func TestEndpointFileWrittenAndRemoved(t *testing.T) {
-	srv, dir := startRealServer(t)
+	srv, dir := startRealServer(t, nil)
 
 	recorded, err := os.ReadFile(EndpointPath(dir))
 	if err != nil {
@@ -93,8 +93,8 @@ func TestEndpointFileWrittenAndRemoved(t *testing.T) {
 // TestLiveRequestRequiresToken exercises the real server over a real socket,
 // rather than through httptest, to confirm the middleware is actually wired
 // into the listening handler.
-func TestLiveRequestRequiresToken(t *testing.T) {
-	srv, dir := startRealServer(t)
+func TestLiveRequestRequiresTokenWhenStrict(t *testing.T) {
+	srv, dir := startRealServer(t, func() bool { return true })
 
 	token, err := os.ReadFile(TokenPath(dir))
 	if err != nil {
@@ -134,7 +134,7 @@ func TestLiveRequestRequiresToken(t *testing.T) {
 	}
 }
 
-func startRealServer(t *testing.T) (*Server, string) {
+func startRealServer(t *testing.T, strict func() bool) (*Server, string) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -152,6 +152,7 @@ func startRealServer(t *testing.T) (*Server, string) {
 		Downloader: service.NewDownloader(s, func([]string, bool) (*channel.PictureMeta, error) {
 			return nil, nil
 		}, nil),
+		RequireToken: strict,
 	})
 	if err != nil {
 		t.Fatalf("Start = %v", err)
@@ -234,5 +235,67 @@ func TestAnUnusableRememberedPortFallsBackToAFreshOne(t *testing.T) {
 		if got := rememberedPort(dir); got != port {
 			t.Errorf("port file %q: remembered %d, want %d", content, got, port)
 		}
+	}
+}
+
+func TestLiveLocalRequestNeedsNoTokenByDefault(t *testing.T) {
+	srv, _ := startRealServer(t, nil)
+	base := "http://" + srv.Addr()
+
+	// A real connection, so it really does come from 127.0.0.1.
+	resp, err := http.Get(base + "/api/v1/channels")
+	if err != nil {
+		t.Fatalf("GET = %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("tokenless local status = %d, want 200", resp.StatusCode)
+	}
+
+	// The same request, but as a reverse proxy on this machine would pass on
+	// a remote user's: it arrives from 127.0.0.1 too, and must not get in.
+	for _, header := range []string{"X-Forwarded-For", "Forwarded", "X-Real-IP", "X-Forwarded-Host"} {
+		req, _ := http.NewRequest("GET", base+"/api/v1/channels", nil)
+		req.Header.Set(header, "203.0.113.7")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET with %s = %v", header, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("forwarded (%s) status = %d, want 401", header, resp.StatusCode)
+		}
+	}
+
+	// A wrong token is reported rather than ignored, even locally, so a
+	// misconfigured client finds out.
+	req, _ := http.NewRequest("GET", base+"/api/v1/channels", nil)
+	req.Header.Set("Authorization", "Bearer wrong")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET = %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("wrong-token status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestLiveLocalCrossOriginWriteIsStillRefused(t *testing.T) {
+	srv, _ := startRealServer(t, nil)
+
+	// With no token needed locally, the Origin check is what keeps a web page
+	// in the user's browser from rewriting the configuration.
+	req, _ := http.NewRequest("PUT", "http://"+srv.Addr()+"/api/v1/settings/log.debug",
+		strings.NewReader(`{"value":"true"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT = %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin write status = %d, want 403", resp.StatusCode)
 	}
 }

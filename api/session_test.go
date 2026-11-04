@@ -219,7 +219,7 @@ func TestRequestsForAnotherHostAreRejected(t *testing.T) {
 	handlers, _ := newTestHandlers(t, nil)
 	// The raw routes, without the test shim that addresses requests to
 	// loopback.
-	h := handlers.routes(testToken, newTicketStore())
+	h := handlers.routes(testToken, newTicketStore(), nil)
 
 	// A DNS-rebinding page reaches 127.0.0.1 under the attacker's name. Even
 	// the open routes must refuse it, or it could read the assets and probe
@@ -329,4 +329,31 @@ type fakeListener struct{ net.Listener }
 
 func (fakeListener) Addr() net.Addr {
 	return &net.TCPAddr{IP: net.ParseIP(LoopbackHost), Port: 8080}
+}
+
+func TestIsDirectLocalRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		remote string
+		header string
+		want   bool
+	}{
+		{"IPv4 loopback", "127.0.0.1:5000", "", true},
+		{"the whole 127/8 block", "127.0.0.2:5000", "", true},
+		{"IPv6 loopback", "[::1]:5000", "", true},
+		{"another machine", "192.0.2.1:5000", "", false},
+		{"forwarded by a local proxy", "127.0.0.1:5000", "X-Forwarded-For", false},
+		{"unparseable", "nonsense", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r.RemoteAddr = tc.remote
+			if tc.header != "" {
+				r.Header.Set(tc.header, "203.0.113.7")
+			}
+			if got := isDirectLocalRequest(r); got != tc.want {
+				t.Errorf("isDirectLocalRequest = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

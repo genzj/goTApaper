@@ -124,7 +124,8 @@ const (
 	KeyHistoryMaxEntries = "history.max-entries"
 	KeyHistoryThumbnails = "history.thumbnails"
 
-	KeyAPIPort = "api.port"
+	KeyAPIPort         = "api.port"
+	KeyAPIRequireToken = "api.require-token"
 )
 
 // definitions is built lazily because the enum values for the setter setting
@@ -265,6 +266,14 @@ func buildDefinitions() []Definition {
 			Label: "Keep thumbnails",
 			Description: "save a small copy of each wallpaper so the history can be " +
 				"previewed; turning this off removes the existing thumbnails",
+		},
+		{
+			Key: KeyAPIRequireToken, Kind: KindBool, Default: "false",
+			Label: "Require the API token from this machine",
+			Description: "when false, requests made directly from this machine need no " +
+				"token; requests forwarded by a proxy, and any that present a token, " +
+				"are always checked. Set true to require the token from every caller, " +
+				"including other accounts on this machine",
 		},
 		{
 			Key: KeyAPIPort, Kind: KindInt, Default: "0",

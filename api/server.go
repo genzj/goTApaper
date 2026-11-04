@@ -59,6 +59,10 @@ type Options struct {
 	// Lifecycle serves POST /daemon/restart and /daemon/stop. Nil answers
 	// them with 501.
 	Lifecycle Lifecycle
+	// RequireToken reports whether requests made directly from this machine
+	// need the token too. It is read per request, so changing the setting
+	// takes effect at once. Nil means they do not.
+	RequireToken func() bool
 }
 
 // Start begins serving in the background.
@@ -99,7 +103,7 @@ func Start(opts Options) (*Server, error) {
 	tickets := newTicketStore()
 	srv := &Server{
 		http: &http.Server{
-			Handler:           h.routes(token, tickets),
+			Handler:           h.routes(token, tickets, opts.RequireToken),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 		listener: listener,
@@ -208,7 +212,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // routes builds the mux. Every route except the health check sits behind the
 // token check.
-func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
+func (h *handlers) routes(token string, tickets *ticketStore, strict func() bool) http.Handler {
+	if strict == nil {
+		strict = func() bool { return false }
+	}
+
 	mux := http.NewServeMux()
 
 	// Unauthenticated: a liveness probe reveals nothing and is useful to a
@@ -251,7 +259,7 @@ func (h *handlers) routes(token string, tickets *ticketStore) http.Handler {
 	authed.HandleFunc("/", r.unmatched)
 	authed.HandleFunc(wire.BasePath+"/", r.unmatched)
 
-	mux.Handle("/", requireToken(token, authed))
+	mux.Handle("/", requireToken(token, strict, authed))
 
 	// Recovery is outermost so a panic in any handler, or in the auth
 	// middleware, still yields a JSON response instead of a dropped
