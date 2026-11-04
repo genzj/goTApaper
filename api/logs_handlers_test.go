@@ -258,3 +258,22 @@ func TestWriteEventEncodesOneFramePerEvent(t *testing.T) {
 		t.Errorf("decoded = %v", decoded)
 	}
 }
+
+func TestEventHubCloseEndsEverySubscription(t *testing.T) {
+	hub := newEventHub()
+	a, cancelA := hub.Subscribe()
+	b, _ := hub.Subscribe()
+
+	hub.Close()
+
+	for name, ch := range map[string]<-chan Event{"a": a, "b": b} {
+		if _, open := <-ch; open {
+			t.Errorf("subscription %s is still open after Close", name)
+		}
+	}
+	// Cancelling after Close must not panic on a second close.
+	cancelA()
+	if got := hub.Subscribers(); got != 0 {
+		t.Fatalf("Subscribers() = %d, want 0", got)
+	}
+}

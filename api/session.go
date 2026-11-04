@@ -167,7 +167,13 @@ func (s *Server) SessionURL() (string, error) {
 	return s.UIURL() + "#ticket=" + url.QueryEscape(ticket), nil
 }
 
-// UIURL is the interface's address, for a client that will sign in by hand.
+// Token returns the API token, for handing to this process's own window.
+//
+// It exists for the native window only, which is in-process: the token is
+// never served by any route except the ticket exchange.
+func (s *Server) Token() string { return s.token }
+
+// UIURL is the interface's plain address.
 func (s *Server) UIURL() string {
 	return "http://" + s.Addr() + uiPath
 }

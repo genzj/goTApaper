@@ -7,10 +7,10 @@
 // a separate GUI process would be a second one.
 //
 // The window does not load a bundled asset server. It navigates to the API
-// server's own /ui/ with a single-use ticket, which the page trades for the
-// API token, exactly as a browser opened from the tray does. The webview is
-// therefore just another API client: it needs no Wails bindings, and there is
-// one way to sign in rather than one per kind of window.
+// server's own /ui/ and is just another API client, using the same bearer
+// token any client does. Being this process's own window, it is handed that
+// token natively on every page load rather than asking for it; a browser
+// opened from the tray gets it through a single-use ticket instead.
 package gui
 
 import (
@@ -35,10 +35,16 @@ type Options struct {
 	// one writer, so two GUIs on two directories are fine.
 	InstanceID string
 
-	// SessionURL returns a URL that opens the interface already signed in. It
-	// is called afresh for every navigation, because the ticket it embeds is
-	// single-use.
+	// SessionURL returns a URL that opens the interface in a browser already
+	// signed in. It is called afresh every time, because the ticket it embeds
+	// is single-use.
 	SessionURL func() (string, error)
+	// UIURL is the interface's plain address, which the window loads. The
+	// window needs no ticket: it is handed the token directly (see Token).
+	UIURL func() (string, error)
+	// Token returns the API token, which the window's page is given each time
+	// it loads, so the native window never asks its user to sign in.
+	Token func() string
 
 	// Refresh asks for a wallpaper refresh now. An empty slice means the
 	// configured rotation.
@@ -111,6 +117,14 @@ func Run(opts Options) error {
 
 	// Closing hides rather than quits, so the tray stays the only way out.
 	// Without this, closing the window would end the refresh loop too.
+	// The page announces itself on the webview's native message channel once
+	// it has loaded, which Wails reports as WindowRuntimeReady; it is answered
+	// with the token. See signInScript for why this is safe, and auth.ts for
+	// the page's side.
+	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) {
+		handOverToken(window, opts)
+	})
+
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
 		setForeground(false)
@@ -231,13 +245,15 @@ func (t *Tray) buildMenu() {
 	t.menu.Add("Quit").OnClick(func(*application.Context) { t.Quit() })
 }
 
-// OpenWindow shows the interface, navigating through a fresh session ticket.
-//
-// The URL is rebuilt every time because a ticket is single-use: reusing the
-// one from the last open would be refused, and the window would show an error
-// page instead of the interface.
+// OpenWindow shows the interface. It reloads the page every time, which also
+// re-signs it in: a page whose token was rejected, or that was signed out,
+// comes back working.
 func (t *Tray) OpenWindow() {
-	url, err := t.sessionURL()
+	if t.opts.UIURL == nil {
+		logrus.WithError(errNoAPIServer).Error("cannot open the interface")
+		return
+	}
+	url, err := t.opts.UIURL()
 	if err != nil {
 		logrus.WithError(err).Error("cannot open the interface")
 		return
@@ -247,6 +263,23 @@ func (t *Tray) OpenWindow() {
 	t.window.SetURL(url)
 	t.window.Show()
 	t.window.Focus()
+}
+
+// handOverToken gives the window's page the API token.
+func handOverToken(window application.Window, opts Options) {
+	if opts.UIURL == nil || opts.Token == nil {
+		return
+	}
+	uiURL, err := opts.UIURL()
+	if err != nil {
+		return
+	}
+	script, err := signInScript(uiURL, opts.Token())
+	if err != nil {
+		logrus.WithError(err).Error("cannot sign the window in")
+		return
+	}
+	window.ExecJS(script)
 }
 
 // Quit shuts the application down, running OnExit and then AfterExit.

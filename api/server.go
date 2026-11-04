@@ -109,6 +109,9 @@ func Start(opts Options) (*Server, error) {
 		tickets:  tickets,
 	}
 
+	// Ends the event streams as shutdown begins; see eventHub.Close.
+	srv.http.RegisterOnShutdown(h.events.Close)
+
 	if err := srv.writeEndpointFile(); err != nil {
 		listener.Close()
 		return nil, err

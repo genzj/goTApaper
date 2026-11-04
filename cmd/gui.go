@@ -63,12 +63,24 @@ func runWindowed() {
 		Description: "Desktop wallpaper manager",
 		InstanceID:  instanceID(config.AppDir()),
 
-		// Rebuilt per navigation, because the ticket inside it is single-use.
+		// Rebuilt every time, because the ticket inside it is single-use.
 		SessionURL: func() (string, error) {
 			if apiServer == nil {
 				return "", errAPIServerUnavailable
 			}
 			return apiServer.SessionURL()
+		},
+		UIURL: func() (string, error) {
+			if apiServer == nil {
+				return "", errAPIServerUnavailable
+			}
+			return apiServer.UIURL(), nil
+		},
+		Token: func() string {
+			if apiServer == nil {
+				return ""
+			}
+			return apiServer.Token()
 		},
 
 		Icon:         mustReadIcon("icons8-sheet-of-paper-systray.ico"),
