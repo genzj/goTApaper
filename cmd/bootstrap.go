@@ -91,8 +91,6 @@ func applyFlagOverrides() {
 	for key, flagName := range map[string]string{
 		config.KeyLogDebug:          "debug",
 		config.KeyLogDebugRendering: "debug-rendering",
-		config.KeyLanguage:          "lang",
-		config.KeyHistoryFile:       "history-file",
 	} {
 		applyFlagOverride(key, root.Lookup(flagName))
 	}

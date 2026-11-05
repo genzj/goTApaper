@@ -19,10 +19,6 @@ GO_SOURCES := $(shell find . -type f -name '*.go' -not -iwholename '*/vendor/*')
 EXAMPLE_SOURCES := $(wildcard ./examples/*.example)
 EXAMPLE_TARGETS := $(addprefix $(TARGET_DIR)/,$(EXAMPLE_SOURCES:./examples/%=%))
 
-I18N_TARGET_DIR := $(TARGET_DIR)/i18n
-I18N_SOURCES := $(wildcard ./*.all.json)
-I18N_TARGET := $(addprefix $(I18N_TARGET_DIR)/,$(I18N_SOURCES))
-
 STRING_DEFINES := github.com/genzj/goTApaper/cmd.Version=$(VERSION)
 STRING_DEFINES += github.com/genzj/goTApaper/cmd.GitCommit=${GIT_COMMIT}${GIT_DIRTY}
 STRING_DEFINES += github.com/genzj/goTApaper/cmd.VersionPrerelease=$(RELEASE)
@@ -39,7 +35,6 @@ help:
 	@echo '    make build           Compile the project.'
 	@echo '    make frontend        Build the web interface into frontend/dist'
 	@echo '    make examples        Copy example files to target directory'
-	@echo '    make i18n            Copy translation files to i18n subdirectory under the target directory'
 	@echo '    make test            Run tests on a compiled project.'
 	@echo '    make clean           Clean the directory tree.'
 	@echo
@@ -47,7 +42,7 @@ help:
 build: build-os-linux-amd64 build-os-linux-i386
 
 build-os-%: $(TARGET_DIR) frontend $(GO_SOURCES)
-	make go-$@ example i18n
+	make go-$@ example
 
 FRONTEND_DIR := frontend
 FRONTEND_DIST := $(FRONTEND_DIR)/dist/index.html
@@ -70,12 +65,6 @@ frontend-deps:
 
 $(TARGET_DIR):
 	@test -e $(TARGET_DIR) || mkdir -p $(TARGET_DIR)
-
-i18n: $(I18N_TARGET)
-
-$(I18N_TARGET_DIR)/%.all.json: %.all.json
-	mkdir -p $(I18N_TARGET_DIR) && \
-		cp -f $^ $@
 
 example: $(TARGET_DIR) $(EXAMPLE_TARGETS)
 
@@ -134,10 +123,4 @@ clean:
 
 test:
 	go test ./...
-
-compile-messages:
-	goi18n *.all.json *.untranslated.json
-
-extract-messages:
-	goi18n *.all.json
 

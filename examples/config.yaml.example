@@ -22,12 +22,6 @@
 # in this setting for which is automatically decided by channels
 wallpaper-file-name: ~/.goTApaper/wallpaper
 
-# full path to history file
-history-file: ~/.goTApaper/history.json
-
-# language for application outputs
-language: en-us
-
 # enable verbose debug log
 debug: false
 

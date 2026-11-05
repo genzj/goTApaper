@@ -25,7 +25,7 @@ make frontend-deps     # npm ci, for a reproducible install
 cd frontend && npm run dev   # Vite dev server; set GOTAPAPER_API to the address
                              # in <app-dir>/api-endpoint so /api proxies to the daemon
 
-# Build for a target platform (builds the frontend and copies examples + i18n as prerequisites;
+# Build for a target platform (builds the frontend and copies examples as prerequisites;
 # the go-build-os-* targets also work on their own, e.g. right after `make clean`)
 make build-os-linux-amd64
 make build-os-darwin-arm64   # Apple Silicon

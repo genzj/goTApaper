@@ -53,6 +53,10 @@ func (s *Store) Settings() ([]store.Setting, error) {
 	}
 
 	for key := range stored {
+		if config.IsRetired(key) {
+			logrus.WithField("key", key).Debug("ignoring a retired setting in database")
+			continue
+		}
 		logrus.WithField("key", key).Warn(
 			"ignoring unrecognised setting in database; " +
 				"it may belong to a newer version of goTApaper",

@@ -9,20 +9,6 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 )
 
-// Deprecated: the pre-database spellings of two setting keys.
-//
-// They are kept only because they are exported, and are now aliases for the
-// current keys. Reading a setting by these names looked up a key that is no
-// longer in the schema, so GetString returned "" and the user's configured
-// wallpaper path was silently ignored in favour of the default. Use
-// KeyWallpaperFileName and KeyHistoryFile.
-const (
-	// WallpaperFileSettingName in config file
-	WallpaperFileSettingName = KeyWallpaperFileName
-	// HistoryFileSettingName in config file
-	HistoryFileSettingName = KeyHistoryFile
-)
-
 func loadAppFileName(configKey, defaultValue string) string {
 	if filename := GetString(configKey); filename != "" {
 		return MustExpand(filename)
@@ -35,11 +21,6 @@ func loadAppFileName(configKey, defaultValue string) string {
 // GetWallpaperFileName return a proper path for wallpaper picture
 func GetWallpaperFileName() string {
 	return loadAppFileName(KeyWallpaperFileName, DefaultWallpaperFileName)
-}
-
-// GetHistoryFileName return a proper path for history storage
-func GetHistoryFileName() string {
-	return loadAppFileName(KeyHistoryFile, DefaultHistoryFileName)
 }
 
 // GetLogFileName returns the path of the rotating log file.

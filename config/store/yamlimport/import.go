@@ -194,6 +194,12 @@ func (im *importer) importGlobals(root *yaml.Node) error {
 // should still import with that one field left at its default. Everything
 // ignored is logged with enough detail to act on.
 func (im *importer) importGlobal(key string, value *yaml.Node) error {
+	if config.IsRetired(key) {
+		logrus.WithField("key", key).Debug(
+			"ignoring a retired setting from the configuration file",
+		)
+		return nil
+	}
 	def, ok := config.LookupLegacy(key)
 	if !ok {
 		logrus.WithField("key", key).Warn(

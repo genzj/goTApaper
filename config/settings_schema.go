@@ -19,7 +19,9 @@ import (
 // operating on a half-understood configuration. Bump it whenever a key is
 // renamed or removed, or when the meaning of an existing value changes.
 // Purely additive changes do not need a bump: an older build already ignores
-// unknown keys safely.
+// unknown keys safely. Nor does removing a key no build ever read: an older
+// build that finds it missing loses nothing. List such a key in retiredKeys
+// instead, so a stored row or an old configuration file is skipped quietly.
 const SettingsSchemaVersion = 1
 
 // registeredEnums collects enum values contributed by other packages, for
@@ -97,8 +99,6 @@ type Definition = ValueSpec
 // is a compile error instead of a silent lookup miss. Renames also need a
 // LegacyKeys entry below, or an existing YAML file stops importing.
 const (
-	KeyLanguage = "language"
-
 	KeyLogDebug          = "log.debug"
 	KeyLogDebugRendering = "log.debug-rendering"
 
@@ -120,13 +120,57 @@ const (
 
 	KeyDaemonInterval = "daemon.interval"
 
-	KeyHistoryFile       = "history.file"
 	KeyHistoryMaxEntries = "history.max-entries"
 	KeyHistoryThumbnails = "history.thumbnails"
 
 	KeyAPIPort         = "api.port"
 	KeyAPIRequireToken = "api.require-token"
 )
+
+// retiredSetting is a setting removed because nothing ever read it.
+type retiredSetting struct {
+	Key        string
+	LegacyKeys []string
+	// Flag is the command line flag that used to override it, if any. It is
+	// still accepted, as a deprecated no-op, so scripts passing it keep working.
+	Flag string
+}
+
+// retiredKeys is the single list of retired settings, in every spelling they
+// were stored, written or passed under. Dropping them changed no behaviour, so
+// they need no schema version bump; they are listed only so a leftover
+// database row or an old config.yaml is skipped without a warning, and an old
+// flag is still parsed. Lookup still misses them: setting one is an
+// ErrUnknownKey like any other.
+var retiredKeys = []retiredSetting{
+	// History moved into the wallpaper_history table.
+	{Key: "history.file", LegacyKeys: []string{"history-file"}, Flag: "history-file"},
+	// No localisation was ever wired to it.
+	{Key: "language", Flag: "lang"},
+}
+
+// IsRetired reports whether key names a setting that has been retired, in its
+// last or any legacy spelling.
+func IsRetired(key string) bool {
+	for _, r := range retiredKeys {
+		if r.Key == key || slices.Contains(r.LegacyKeys, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// RetiredFlags returns the command line flags of retired settings, which the
+// CLI keeps registered as deprecated no-ops.
+func RetiredFlags() []string {
+	var flags []string
+	for _, r := range retiredKeys {
+		if r.Flag != "" {
+			flags = append(flags, r.Flag)
+		}
+	}
+	return flags
+}
 
 // definitions is built lazily because the enum values for the setter setting
 // depend on a registry populated by init functions in another package.
@@ -155,11 +199,6 @@ func Definitions() []Definition {
 
 func buildDefinitions() []Definition {
 	return []Definition{
-		{
-			Key: KeyLanguage, Kind: KindString, Default: "en-us",
-			Label:       "Language",
-			Description: "language used for application output, in xx-YY format",
-		},
 		{
 			Key: KeyLogDebug, Kind: KindBool, Default: "false",
 			Label:       "Debug logging",
@@ -247,12 +286,6 @@ func buildDefinitions() []Definition {
 			Key: KeyDaemonInterval, Kind: KindInt, Default: strconv.Itoa(DefaultDaemonInterval),
 			Label:       "Refresh interval",
 			Description: "seconds to sleep between two background refreshes",
-		},
-		{
-			Key: KeyHistoryFile, Kind: KindString, Default: "",
-			Label:       "Legacy history file",
-			Description: "path to the legacy history file; unused once history lives in the database",
-			LegacyKeys:  []string{"history-file"},
 		},
 		{
 			Key: KeyHistoryMaxEntries, Kind: KindInt,

@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
+
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
 	"github.com/genzj/goTApaper/config/store/sqlite"
@@ -269,6 +272,38 @@ active-channels:
 	}
 	if !config.ValidAlignment(layers[0].Alignment) {
 		t.Errorf("alignment = %q, want a valid one", layers[0].Alignment)
+	}
+}
+
+// TestImportSkipsRetiredSettingsQuietly covers files written before the
+// settings were retired: the shipped example carried both.
+func TestImportSkipsRetiredSettingsQuietly(t *testing.T) {
+	hook := logtest.NewGlobal()
+	defer hook.Reset()
+
+	s := importDoc(t, `
+history-file: ~/.goTApaper/history.json
+language: en-us
+reference-width: 2560
+channels:
+  only:
+    type: bing-wallpaper
+active-channels:
+  - only
+`)
+
+	for _, e := range hook.AllEntries() {
+		if e.Level <= logrus.WarnLevel {
+			t.Errorf("importing a retired setting logged %s: %q", e.Level, e.Message)
+		}
+	}
+
+	width, err := s.Setting(config.KeyPictureReferenceWidth)
+	if err != nil {
+		t.Fatalf("Setting(reference-width) = %v", err)
+	}
+	if width.Value != "2560" {
+		t.Errorf("reference-width = %q, want 2560", width.Value)
 	}
 }
 
