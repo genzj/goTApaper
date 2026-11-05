@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
+
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
 )
@@ -214,6 +217,39 @@ func TestSettingsIgnoresUnknownStoredKeys(t *testing.T) {
 	if len(settings) != len(config.Definitions()) {
 		t.Errorf("Settings returned %d entries, want one per definition (%d)",
 			len(settings), len(config.Definitions()))
+	}
+}
+
+func TestSettingsSkipsRetiredStoredKeysQuietly(t *testing.T) {
+	s := openMemory(t)
+
+	// A database written before the key was retired still holds its row.
+	if _, err := s.db.Exec(
+		"INSERT INTO settings (key, value) VALUES ('history.file', '~/history.json')",
+	); err != nil {
+		t.Fatalf("seeding retired key = %v", err)
+	}
+
+	hook := logtest.NewGlobal()
+	defer hook.Reset()
+
+	settings, err := s.Settings()
+	if err != nil {
+		t.Fatalf("Settings = %v", err)
+	}
+	for _, st := range settings {
+		if st.Key == "history.file" {
+			t.Error("Settings surfaced a retired key")
+		}
+	}
+	for _, e := range hook.AllEntries() {
+		if e.Level <= logrus.WarnLevel {
+			t.Errorf("a retired key logged %s: %q", e.Level, e.Message)
+		}
+	}
+
+	if _, err := s.Setting("history.file"); !errors.Is(err, config.ErrUnknownKey) {
+		t.Errorf("Setting(history.file) = %v, want ErrUnknownKey", err)
 	}
 }
 

@@ -9,9 +9,6 @@ const (
 	// DefaultWallpaperFileName specifies default wallpaper downloading path
 	DefaultWallpaperFileName = "wallpaper"
 
-	// DefaultHistoryFileName specifies default name of the history file
-	DefaultHistoryFileName = "history.json"
-
 	// DefaultDBFileName specifies the name of the SQLite configuration database
 	DefaultDBFileName = "gotapaper.db"
 

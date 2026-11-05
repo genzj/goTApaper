@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/genzj/goTApaper/config"
 )
 
 // AppName states name of the project
@@ -41,12 +43,13 @@ func init() {
 		"application directory holding the configuration database "+
 			"(default ~/.goTApaper, or $GOTAPAPER_APP_DIR)",
 	)
-	RootCmd.PersistentFlags().String(
-		"history-file", "", "legacy history file, used only when importing",
-	)
-	RootCmd.PersistentFlags().String(
-		"lang", "en-us", "language used for display, in xx-YY format.",
-	)
+	// Retired settings: nothing ever read them. Their flags stay so scripts
+	// and login items passing them keep working. Every retired setting was a
+	// string, so each takes a value.
+	for _, name := range config.RetiredFlags() {
+		RootCmd.PersistentFlags().String(name, "", "")
+		_ = RootCmd.PersistentFlags().MarkDeprecated(name, "it has no effect and will be removed")
+	}
 	RootCmd.PersistentFlags().Bool("debug", false, "enable debug log output")
 	RootCmd.PersistentFlags().Bool(
 		"debug-rendering", false, "enable debug mode in watermark rendering",
