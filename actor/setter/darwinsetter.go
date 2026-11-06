@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/util"
@@ -59,11 +60,29 @@ func (_ DarwinSetter) Set(file string) error {
 		logrus.WithError(err).Debug("cannot read the current wallpaper paths")
 	}
 
+	// What this process set last beats what the system reports: the report
+	// lags a set, and acting on a stale one would pick the slot on screen.
+	current := slotGuard.current()
+	if current == "" {
+		current = currentSlot(paths)
+	}
+
 	wallpaperPath, err := filepath.Abs(
-		filepath.Join(dir, nextSlot(currentSlot(paths), dir, ext)+ext),
+		filepath.Join(dir, nextSlot(current, dir, ext)+ext),
 	)
 	if err != nil {
 		return err
+	}
+
+	// A slot displayed moments ago is still alive in the agent, which would
+	// show its old picture instead of reading the new file. See
+	// slotReuseGrace.
+	if wait := slotGuard.waitFor(wallpaperPath); wait > 0 {
+		logrus.WithFields(logrus.Fields{
+			"slot": wallpaperPath,
+			"wait": wait.Round(time.Millisecond).String(),
+		}).Info("waiting for macOS to release the wallpaper slot before reusing it")
+		slotGuard.sleep(wait)
 	}
 
 	if _, err := util.CopyFile(file, wallpaperPath); err != nil {
@@ -89,6 +108,7 @@ func (_ DarwinSetter) Set(file string) error {
 	); err != nil {
 		return err
 	}
+	slotGuard.recordSet(wallpaperPath, slotPaths(dir, ext))
 
 	if after, err := currentWallpapers(); err == nil {
 		logrus.WithField("desktops", after).Info("macOS reports these wallpapers")
@@ -122,6 +142,18 @@ func nextSlot(current, dir, ext string) string {
 		}
 	}
 	return wallpaperSlots[0]
+}
+
+// slotPaths is the absolute path of every slot for this directory and
+// extension.
+func slotPaths(dir, ext string) []string {
+	paths := make([]string, 0, len(wallpaperSlots))
+	for _, slot := range wallpaperSlots {
+		if abs, err := filepath.Abs(filepath.Join(dir, slot+ext)); err == nil {
+			paths = append(paths, abs)
+		}
+	}
+	return paths
 }
 
 // currentWallpapers asks the system which file each desktop is displaying.
