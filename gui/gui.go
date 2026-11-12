@@ -203,9 +203,9 @@ func newTray(app *application.App, window application.Window, opts Options) *Tra
 	t.buildMenu()
 	t.tray.SetMenu(t.menu)
 
-	// Clicking the icon opens the interface, which is what a user expects of
-	// a tray application with a window.
-	t.tray.OnClick(t.OpenWindow)
+	// Clicking the icon toggles the interface window, which is what a user
+	// expects of a tray application with a window.
+	t.tray.OnClick(t.ToggleWindow)
 
 	return t
 }
@@ -235,9 +235,9 @@ func (t *Tray) buildMenu() {
 
 	t.menu.AddSeparator()
 
-	t.menu.Add("Open goTApaper").
-		SetTooltip("Show the configuration and history window").
-		OnClick(func(*application.Context) { t.OpenWindow() })
+	t.menu.Add("Toggle goTApaper Window").
+		SetTooltip("Show or hide the configuration and history window").
+		OnClick(func(*application.Context) { t.ToggleWindow() })
 
 	t.menu.Add("Open in Browser").
 		SetTooltip("Open the same interface in your default browser").
@@ -259,6 +259,22 @@ func (t *Tray) buildMenu() {
 	})
 
 	t.menu.Add("Quit").OnClick(func(*application.Context) { t.Quit() })
+}
+
+// ToggleWindow hides the interface window when it is visible, and opens it
+// when it is hidden.
+func (t *Tray) ToggleWindow() {
+	if t.window.IsVisible() {
+		t.HideWindow()
+		return
+	}
+	t.OpenWindow()
+}
+
+// HideWindow hides the interface window and returns macOS to accessory mode.
+func (t *Tray) HideWindow() {
+	t.window.Hide()
+	setForeground(false)
 }
 
 // OpenWindow shows the interface. It reloads the page every time, which also
