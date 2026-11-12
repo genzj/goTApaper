@@ -331,7 +331,10 @@ func (t *Tray) installed() bool {
 
 func (t *Tray) toggleStartup() {
 	var err error
-	if t.startupItem.Checked() {
+	// Consult t.installed() rather than t.startupItem.Checked(): Wails flips
+	// the MenuItem's checked flag before running OnClick, so Checked() already
+	// reports the post-click state rather than what is currently installed.
+	if t.installed() {
 		err = t.disableLogin()
 	} else {
 		err = t.enableLogin()

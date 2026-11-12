@@ -1,9 +1,56 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 )
+
+// settingValue accepts a JSON string, number, or boolean and normalises it to
+// the string form that config.Validate and store.SetSetting expect.
+//
+// Accepting scalar JSON types directly means a client -- whether curl or a
+// form control -- can send {"value": 1800} or {"value": "1800"} for an
+// integer setting and {"value": true} or {"value": "true"} for a boolean one.
+type settingValue string
+
+func (v *settingValue) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return errors.New("setting value cannot be null")
+	}
+
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		*v = settingValue(s)
+		return nil
+	case 't', 'f':
+		var b bool
+		if err := json.Unmarshal(trimmed, &b); err != nil {
+			return err
+		}
+		*v = settingValue(strconv.FormatBool(b))
+		return nil
+	case '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+		var n json.Number
+		dec := json.NewDecoder(bytes.NewReader(trimmed))
+		dec.UseNumber()
+		if err := dec.Decode(&n); err != nil {
+			return err
+		}
+		*v = settingValue(n.String())
+		return nil
+	default:
+		return errors.New("setting value must be a string, number, or boolean")
+	}
+}
 
 // registerSettingRoutes serves the global scalar settings, and the schema describing them.
 func (h *handlers) registerSettingRoutes(r *router) {
@@ -48,12 +95,16 @@ func (h *handlers) getSetting(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Value string `json:"value"`
+		Value *settingValue `json:"value"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := h.config.SetSetting(r.PathValue("key"), body.Value); err != nil {
+	if body.Value == nil {
+		writeError(w, http.StatusBadRequest, `missing required field "value"`)
+		return
+	}
+	if err := h.config.SetSetting(r.PathValue("key"), string(*body.Value)); err != nil {
 		writeStoreError(w, err)
 		return
 	}

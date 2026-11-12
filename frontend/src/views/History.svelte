@@ -20,7 +20,6 @@
   async function load() {
     try {
       history = await api.history(PAGE, offset)
-      error = ''
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
     }

@@ -28,6 +28,17 @@ type handlers struct {
 type errorBody = wire.ErrorBody
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
+	if eb, ok := body.(errorBody); ok && eb.Error != "" &&
+		status >= http.StatusBadRequest &&
+		status != http.StatusUnauthorized &&
+		status != http.StatusForbidden &&
+		status != http.StatusInternalServerError {
+		logrus.WithFields(logrus.Fields{
+			"status": status,
+			"error":  eb.Error,
+		}).Warn("API request rejected")
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if body == nil {

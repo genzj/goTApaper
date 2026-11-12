@@ -36,6 +36,7 @@ func NewConfig(s store.Store) *Config {
 // client can render the right control without hard-coding the vocabulary.
 type SettingView struct {
 	Key         string   `json:"key"`
+	Label       string   `json:"label,omitempty"`
 	Value       string   `json:"value"`
 	IsDefault   bool     `json:"isDefault"`
 	Kind        string   `json:"kind"`
@@ -61,6 +62,7 @@ func (c *Config) Settings() ([]SettingView, error) {
 		}
 		out = append(out, SettingView{
 			Key:         s.Key,
+			Label:       def.Label,
 			Value:       value,
 			IsDefault:   s.IsDefault,
 			Kind:        string(def.Kind),

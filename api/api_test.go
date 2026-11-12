@@ -195,10 +195,54 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if view.Value != config.CropNo {
 		t.Errorf("value = %q, want %q", view.Value, config.CropNo)
 	}
+	if view.Label == "" {
+		t.Error("the response should carry the human-readable label")
+	}
 	// The schema travels with the value, so a client can render a control
 	// without its own copy of the vocabulary.
 	if len(view.EnumValues) == 0 {
 		t.Error("the response should carry the accepted values")
+	}
+}
+
+func TestSettingAcceptsNumericAndBooleanJSONValues(t *testing.T) {
+	h, s := newTestServer(t)
+
+	// A number control in a form or a curl caller may send an integer or
+	// boolean literal rather than a quoted string.
+	rec := do(t, h, "PUT", "/api/v1/settings/daemon.interval", `{"value":1800}`, testToken)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT numeric value status = %d, want 204: %s", rec.Code, rec.Body)
+	}
+	got, err := s.Setting(config.KeyDaemonInterval)
+	if err != nil {
+		t.Fatalf("Setting: %v", err)
+	}
+	if got.Value != "1800" {
+		t.Errorf("daemon.interval = %q, want 1800", got.Value)
+	}
+
+	rec = do(t, h, "PUT", "/api/v1/settings/log.debug", `{"value":true}`, testToken)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT boolean value status = %d, want 204: %s", rec.Code, rec.Body)
+	}
+	gotBool, err := s.Setting(config.KeyLogDebug)
+	if err != nil {
+		t.Fatalf("Setting: %v", err)
+	}
+	if gotBool.Value != "true" {
+		t.Errorf("log.debug = %q, want true", gotBool.Value)
+	}
+}
+
+func TestSettingRejectsNullOrMissingValue(t *testing.T) {
+	h, _ := newTestServer(t)
+
+	for _, body := range []string{`{"value":null}`, `{}`} {
+		rec := do(t, h, "PUT", "/api/v1/settings/daemon.interval", body, testToken)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("body %s: status = %d, want 400", body, rec.Code)
+		}
 	}
 }
 

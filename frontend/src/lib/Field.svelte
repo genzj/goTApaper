@@ -54,9 +54,21 @@
         {/each}
       </select>
     {:else if spec.kind === 'int'}
-      <input id={spec.key} type="number" step="1" bind:value />
+      <input
+        id={spec.key}
+        type="number"
+        step="1"
+        value={value}
+        oninput={(e) => (value = e.currentTarget.value)}
+      />
     {:else if spec.kind === 'float'}
-      <input id={spec.key} type="number" step="any" bind:value />
+      <input
+        id={spec.key}
+        type="number"
+        step="any"
+        value={value}
+        oninput={(e) => (value = e.currentTarget.value)}
+      />
     {:else if spec.kind === 'stringMap'}
       <textarea id={spec.key} rows="3" placeholder="key=value" bind:value></textarea>
       <span class="hint">One <code>key=value</code> per line.</span>
