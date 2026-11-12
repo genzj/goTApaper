@@ -127,10 +127,13 @@ func runWindowed() {
 // Per directory rather than global, because the limit exists for the
 // database's sake: two interfaces on two directories have two databases and
 // are fine, which is also what lets a throwaway --app-dir be tried alongside
-// the real one. Hashed so the path does not appear in a lock file name.
+// the real one. Hashed so the path does not appear in a lock file name, and
+// prefixed with a letter because Linux's single-instance lock uses the ID as a
+// D-Bus bus and interface name, where no dot-separated element may start with
+// a digit.
 func instanceID(appDir string) string {
 	sum := sha256.Sum256([]byte(appDir))
-	return "com.github.genzj.goTApaper." + hex.EncodeToString(sum[:8])
+	return "com.github.genzj.goTApaper.i" + hex.EncodeToString(sum[:8])
 }
 
 // takeOverFromDaemon stops a headless daemon serving this directory, so the

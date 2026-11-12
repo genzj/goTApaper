@@ -90,6 +90,18 @@ func Run(opts Options) error {
 			ActivationPolicy: application.ActivationPolicyAccessory,
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
+		Windows: application.WindowsOptions{
+			DisableQuitOnLastWindowClosed: true,
+		},
+		Linux: application.LinuxOptions{
+			DisableQuitOnLastWindowClosed: true,
+		},
+		WarningHandler: func(text string) {
+			logrus.Warn(text)
+		},
+		ErrorHandler: func(err error) {
+			logrus.WithError(err).Error("desktop interface error")
+		},
 		PostShutdown: opts.AfterExit,
 	}
 	if opts.InstanceID != "" {
@@ -179,6 +191,10 @@ func newTray(app *application.App, window application.Window, opts Options) *Tra
 	if runtime.GOOS == "darwin" && opts.TemplateIcon != nil {
 		// A template icon is what lets macOS invert it for a dark menu bar.
 		t.tray.SetTemplateIcon(opts.TemplateIcon)
+	} else if runtime.GOOS == "linux" && opts.Icon != nil {
+		// Wails's Linux StatusNotifierItem implementation decodes the icon
+		// with image/png.Decode, so extract the PNG frame from the .ico.
+		t.tray.SetIcon(icoToPNG(opts.Icon))
 	} else if opts.Icon != nil {
 		t.tray.SetIcon(opts.Icon)
 	}
@@ -324,9 +340,10 @@ func (t *Tray) toggleStartup() {
 		logrus.WithError(err).Error("cannot change the start-at-login setting")
 	}
 	// Read back rather than assuming the toggle took, so the checkbox cannot
-	// disagree with the system.
+	// disagree with the system. MenuItem setters update the native/D-Bus tray
+	// menu directly on every platform; calling Menu.Update() on Linux would
+	// replace the D-Bus tray item bindings with a GTK window menu.
 	t.startupItem.SetChecked(t.installed())
-	t.menu.Update()
 }
 
 func (t *Tray) enableLogin() error {
@@ -352,7 +369,6 @@ func (t *Tray) Refreshing(active bool) {
 		t.refreshItem.SetLabel("Refresh")
 		t.refreshItem.SetEnabled(true)
 	}
-	t.menu.Update()
 }
 
 // ShowPicture updates the readout rows for a newly applied picture, or clears
@@ -375,8 +391,6 @@ func (t *Tray) ShowPicture(meta *channel.PictureMeta, err error) {
 	} else {
 		set(t.errorItem, "")
 	}
-
-	t.menu.Update()
 }
 
 // set gives a readout row its text, hiding it when there is nothing to say so
