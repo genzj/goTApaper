@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon, { type IconName } from './Icon.svelte'
+  import { cycleTheme, theme, themeLabel, type ThemeMode } from './theme'
 
   let {
     title,
@@ -24,6 +25,12 @@
     onRestart?: () => void
     onSignOut?: () => void
   } = $props()
+
+  function themeIcon(mode: ThemeMode): IconName {
+    if (mode === 'light') return 'sun'
+    if (mode === 'dark') return 'moon'
+    return 'monitor'
+  }
 </script>
 
 <header class="topbar">
@@ -61,6 +68,17 @@
           {/if}
         </span>
       </span>
+
+      <button
+        type="button"
+        class="theme-btn"
+        onclick={() => cycleTheme($theme)}
+        title={`Color theme: ${themeLabel($theme)} (click to switch)`}
+        aria-label={`Color theme: ${themeLabel($theme)}. Click to switch.`}
+      >
+        <Icon name={themeIcon($theme)} size={15} />
+        <span class="theme-label">{themeLabel($theme)}</span>
+      </button>
 
       <div class="mobile-actions">
         {#if onRestart}
@@ -195,6 +213,13 @@
     color: var(--warn);
   }
 
+  .theme-btn {
+    min-height: 2rem;
+    padding: 0.2rem var(--space-3);
+    font-size: var(--text-xs);
+    gap: 0.35rem;
+  }
+
   .mobile-actions {
     display: none;
     align-items: center;
@@ -227,8 +252,14 @@
   }
 
   @media (max-width: 540px) {
-    .subtitle {
+    .subtitle,
+    .theme-label {
       display: none;
+    }
+
+    .theme-btn {
+      width: 2rem;
+      padding: 0;
     }
   }
 </style>

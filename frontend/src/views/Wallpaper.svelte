@@ -322,17 +322,22 @@
     display: block;
     width: 100%;
     padding: 0;
-    border: none;
+    border: 1px solid var(--border);
     background: var(--surface-subtle);
     border-radius: var(--radius-md);
     cursor: zoom-in;
     overflow: hidden;
-    box-shadow: none;
+    box-shadow: var(--shadow-xs);
+    transition:
+      border-color var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out);
   }
 
-  .photo-trigger:hover:not(:disabled) {
+  .photo-trigger:hover:not(:disabled),
+  .photo-trigger:focus-visible {
     background: var(--surface-subtle);
-    border-color: transparent;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-surface), var(--shadow-md);
   }
 
   .photo-trigger :global(img) {
@@ -340,13 +345,9 @@
     max-height: 68dvh;
     object-fit: contain;
     background: var(--surface-subtle);
-    border: 1px solid var(--border-subtle);
+    border: none;
     border-radius: var(--radius-md);
-    transition: transform var(--duration-normal) var(--ease-out);
-  }
-
-  .photo-trigger:hover :global(img) {
-    transform: scale(1.008);
+    box-shadow: none;
   }
 
   .inspect-pill {
@@ -358,15 +359,28 @@
     gap: var(--space-2);
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-pill);
-    background: var(--bg-glass);
-    backdrop-filter: var(--backdrop-blur);
-    -webkit-backdrop-filter: var(--backdrop-blur);
+    background: var(--surface);
     border: 1px solid var(--border);
     color: var(--fg);
     font-size: var(--text-xs);
     font-weight: 600;
     box-shadow: var(--shadow-sm);
     pointer-events: none;
+    transition:
+      transform var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out),
+      color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .photo-trigger:hover .inspect-pill,
+  .photo-trigger:focus-visible .inspect-pill {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
   }
 
   .missing-file {

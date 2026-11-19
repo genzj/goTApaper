@@ -41,17 +41,34 @@
   let stageEl = $state<HTMLDivElement | null>(null)
   let stageWidth = $state(0)
   let stageHeight = $state(0)
+  let zoomPulse = $state(false)
+  let zoomPulseTimer: number | undefined
+
+  // Pointer drag-to-pan state when zoomed in (> 100%).
+  let isDragging = $state(false)
+  let dragMoved = false
+  let dragStartX = 0
+  let dragStartY = 0
+  let startScrollLeft = 0
+  let startScrollTop = 0
 
   $effect(() => {
     closeBtn?.focus()
+    return () => {
+      if (zoomPulseTimer) window.clearTimeout(zoomPulseTimer)
+    }
   })
 
   $effect(() => {
     if (!stageEl) return
     const update = () => {
       if (!stageEl) return
-      stageWidth = stageEl.clientWidth
-      stageHeight = stageEl.clientHeight
+      const w = stageEl.clientWidth
+      const h = stageEl.clientHeight
+      // Threshold guard (> 2px) prevents scrollbar appearance or sub-pixel
+      // rounding from causing a ResizeObserver reflow loop.
+      if (Math.abs(w - stageWidth) > 2) stageWidth = w
+      if (Math.abs(h - stageHeight) > 2) stageHeight = h
     }
     update()
     const ro = new ResizeObserver(update)
@@ -62,15 +79,54 @@
   const baseWidth = $derived(Math.max(240, stageWidth - 32))
   const baseHeight = $derived(Math.max(180, stageHeight - 32))
 
+  function applyZoom(nextZoom: number) {
+    if (nextZoom === zoom) return
+    zoom = nextZoom
+    zoomPulse = true
+    if (zoomPulseTimer) window.clearTimeout(zoomPulseTimer)
+    zoomPulseTimer = window.setTimeout(() => {
+      zoomPulse = false
+    }, 180)
+  }
+
   function stepZoom(delta: number) {
     const idx = ZOOM_STEPS.findIndex((z) => z >= zoom)
     const cur = idx === -1 ? ZOOM_STEPS.length - 1 : idx
     const next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, cur + delta))
-    zoom = ZOOM_STEPS[next]
+    applyZoom(ZOOM_STEPS[next])
   }
 
   function toggleQuickZoom() {
-    zoom = zoom === 1 ? 2 : 1
+    if (dragMoved) {
+      dragMoved = false
+      return
+    }
+    applyZoom(zoom === 1 ? 2 : 1)
+  }
+
+  function onStagePointerDown(e: PointerEvent) {
+    if (zoom <= 1 || e.button !== 0 || !stageEl) return
+    isDragging = true
+    dragMoved = false
+    dragStartX = e.clientX
+    dragStartY = e.clientY
+    startScrollLeft = stageEl.scrollLeft
+    startScrollTop = stageEl.scrollTop
+  }
+
+  function onStagePointerMove(e: PointerEvent) {
+    if (!isDragging || !stageEl) return
+    const dx = e.clientX - dragStartX
+    const dy = e.clientY - dragStartY
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      dragMoved = true
+    }
+    stageEl.scrollLeft = startScrollLeft - dx
+    stageEl.scrollTop = startScrollTop - dy
+  }
+
+  function onStagePointerUp() {
+    isDragging = false
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -85,7 +141,7 @@
       stepZoom(-1)
     } else if (e.key === '0') {
       e.preventDefault()
-      zoom = 1
+      applyZoom(1)
     } else if (e.key === 'i' || e.key === 'I') {
       e.preventDefault()
       showDetails = !showDetails
@@ -137,7 +193,7 @@
           <button
             type="button"
             class="zoom-readout"
-            onclick={() => (zoom = 1)}
+            onclick={() => applyZoom(1)}
             title="Reset zoom to fit (0)"
           >
             {Math.round(zoom * 100)}%
@@ -191,12 +247,25 @@
     </header>
 
     <div class="lb-body">
-      <div class="stage" class:zoomed={zoom > 1} bind:this={stageEl}>
+      <div
+        class="stage"
+        class:zoomed={zoom > 1}
+        class:dragging={isDragging}
+        role="region"
+        aria-label="Zoomable photo stage"
+        bind:this={stageEl}
+        onpointerdown={onStagePointerDown}
+        onpointermove={onStagePointerMove}
+        onpointerup={onStagePointerUp}
+        onpointercancel={onStagePointerUp}
+        onpointerleave={onStagePointerUp}
+      >
         <button
           type="button"
           class="canvas-trigger"
+          class:zoom-pulse={zoomPulse}
           onclick={toggleQuickZoom}
-          title={zoom === 1 ? 'Click to zoom in (200%)' : 'Click to fit to screen (100%)'}
+          title={zoom === 1 ? 'Click to zoom in (200%)' : 'Drag to pan · Click to fit (100%)'}
           style={`width: ${Math.round(baseWidth * zoom)}px; --zoom-max-h: ${Math.round(baseHeight * zoom)}px;`}
         >
           <AuthImage {path} alt={title} {version} />
@@ -232,17 +301,61 @@
 </div>
 
 <style>
+  @keyframes backdrop-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes modal-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes drawer-enter {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes zoom-snap {
+    from {
+      opacity: 0.88;
+      transform: scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   .backdrop {
     position: fixed;
     inset: 0;
     z-index: 100;
-    background: rgba(9, 9, 11, 0.78);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    /* Solid/translucent studio darkroom scrim without backdrop-filter blur:
+       avoids full-viewport GPU background re-blurring on every frame. */
+    background: rgba(9, 9, 11, 0.9);
+    contain: layout style paint;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: var(--space-4);
+    animation: backdrop-fade var(--duration-fast) var(--ease-out);
   }
 
   .lightbox {
@@ -256,6 +369,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    contain: layout paint;
+    animation: modal-enter var(--duration-normal) var(--ease-out);
   }
 
   .lb-header {
@@ -361,17 +476,23 @@
     min-width: 0;
     min-height: 0;
     overflow: auto;
+    contain: strict;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: var(--space-4);
-    background:
-      radial-gradient(circle at center, var(--surface-subtle) 0%, var(--bg) 100%);
+    background: var(--bg);
+    user-select: none;
   }
 
   .stage.zoomed {
     align-items: flex-start;
     justify-content: flex-start;
+    cursor: grab;
+  }
+
+  .stage.zoomed.dragging {
+    cursor: grabbing;
   }
 
   .canvas-trigger {
@@ -383,11 +504,14 @@
     box-shadow: none;
     cursor: zoom-in;
     border-radius: var(--radius-md);
-    transition: width var(--duration-fast) var(--ease-out);
+  }
+
+  .canvas-trigger.zoom-pulse {
+    animation: zoom-snap var(--duration-fast) var(--ease-out);
   }
 
   .stage.zoomed .canvas-trigger {
-    cursor: zoom-out;
+    cursor: inherit;
   }
 
   .canvas-trigger:hover:not(:disabled) {
@@ -401,8 +525,13 @@
     max-height: var(--zoom-max-h, 76dvh);
     object-fit: contain;
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-sm);
     background: var(--surface);
+    pointer-events: none;
+  }
+
+  .stage.zoomed .canvas-trigger :global(img) {
+    box-shadow: none;
   }
 
   .lb-drawer {
@@ -415,6 +544,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
+    animation: drawer-enter var(--duration-fast) var(--ease-out);
   }
 
   .drawer-section h3 {

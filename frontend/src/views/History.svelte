@@ -369,25 +369,27 @@
     display: block;
     width: 100%;
     padding: 0;
-    border: none;
-    background: transparent;
+    border: 1px solid var(--border-subtle);
+    background: var(--surface-subtle);
     box-shadow: none;
     cursor: zoom-in;
     border-radius: var(--radius-md);
     overflow: hidden;
+    transition:
+      border-color var(--duration-normal) var(--ease-out),
+      box-shadow var(--duration-normal) var(--ease-out);
   }
 
-  .thumb-trigger:hover:not(:disabled) {
-    background: transparent;
-    border-color: transparent;
+  .thumb-trigger:hover:not(:disabled),
+  .thumb-trigger:focus-visible {
+    background: var(--surface-subtle);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-surface), var(--shadow-sm);
   }
 
   .thumb-trigger :global(img) {
-    transition: transform var(--duration-normal) var(--ease-out);
-  }
-
-  .thumb-trigger:hover :global(img) {
-    transform: scale(1.03);
+    border: none;
+    box-shadow: none;
   }
 
   .zoom-overlay {
@@ -399,22 +401,24 @@
     gap: 0.25rem;
     padding: 0.2rem 0.55rem;
     border-radius: var(--radius-pill);
-    background: var(--bg-glass);
-    backdrop-filter: var(--backdrop-blur);
-    -webkit-backdrop-filter: var(--backdrop-blur);
-    border: 1px solid var(--border);
-    color: var(--fg);
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: var(--accent-fg);
     font-size: 0.7rem;
     font-weight: 600;
-    box-shadow: var(--shadow-xs);
+    box-shadow: var(--shadow-sm);
     opacity: 0;
-    transition: opacity var(--duration-fast) var(--ease-out);
+    transform: translateY(4px);
+    transition:
+      opacity var(--duration-fast) var(--ease-out),
+      transform var(--duration-fast) var(--ease-out);
     pointer-events: none;
   }
 
   .thumb-trigger:hover .zoom-overlay,
   .thumb-trigger:focus-visible .zoom-overlay {
     opacity: 1;
+    transform: translateY(0);
   }
 
   .media-badges {
