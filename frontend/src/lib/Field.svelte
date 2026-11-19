@@ -94,5 +94,16 @@
 <style>
   .req {
     color: var(--error);
+    font-weight: 700;
+    margin-left: var(--space-1);
+    text-decoration: none;
+  }
+
+  .field > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    min-width: 0;
   }
 </style>

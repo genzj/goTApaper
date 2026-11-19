@@ -56,13 +56,21 @@
     width: 100%;
     display: block;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
+    background: var(--surface-subtle);
+  }
+
+  img {
+    box-shadow: var(--shadow-sm);
   }
 
   .missing {
     aspect-ratio: 16 / 9;
     display: grid;
     place-items: center;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--muted);
   }
 </style>

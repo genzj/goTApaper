@@ -3,12 +3,14 @@
   import { api, type Setting } from '../lib/api'
   import { configVersion } from '../lib/events'
   import Field from '../lib/Field.svelte'
+  import Icon from '../lib/Icon.svelte'
 
   let settings = $state<Setting[]>([])
   let edited = $state<Record<string, string>>({})
   let error = $state('')
   let saved = $state('')
   let loading = $state(true)
+  let activeGroup = $state<string>('')
 
   async function load(preserveEdits = false) {
     loading = true
@@ -50,6 +52,10 @@
     }
     return [...out.entries()].sort(([a], [b]) => a.localeCompare(b))
   })
+
+  const filteredGroups = $derived(
+    activeGroup ? groups.filter(([g]) => g === activeGroup) : groups,
+  )
 
   const changed = $derived(
     settings
@@ -100,12 +106,27 @@
   })
 </script>
 
-<div class="row">
-  <button onclick={save} disabled={changed.length === 0}>
-    Save{changed.length ? ` (${changed.length})` : ''}
-  </button>
-  <button onclick={reload}>Reload</button>
-  {#if saved}<span class="muted">{saved}</span>{/if}
+<div class="toolbar sticky-toolbar">
+  <div class="toolbar-left">
+    <strong>Configuration</strong>
+    {#if changed.length > 0}
+      <span class="badge accent">{changed.length} unsaved</span>
+    {/if}
+    {#if saved}
+      <span class="badge success">{saved}</span>
+    {/if}
+  </div>
+
+  <div class="row">
+    <button class="btn-primary" onclick={save} disabled={changed.length === 0}>
+      <Icon name="check" size={15} />
+      <span>Save{changed.length ? ` (${changed.length})` : ''}</span>
+    </button>
+    <button onclick={reload}>
+      <Icon name="reload" size={15} />
+      <span>Reload</span>
+    </button>
+  </div>
 </div>
 
 {#if error}
@@ -113,44 +134,165 @@
 {/if}
 
 {#if loading}
-  <p class="muted">Loading…</p>
+  <div class="empty-state">
+    <p class="muted">Loading application settings…</p>
+  </div>
 {:else}
-  {#each groups as [group, items] (group)}
-    <h2>{group}</h2>
-    {#each items as setting (setting.key)}
-      <div class="entry">
-        <Field
-          spec={setting}
-          isDefault={setting.isDefault}
-          bind:value={edited[setting.key]}
-        />
-        {#if !setting.isDefault}
-          <button
-            class="reset"
-            title="Revert to the built-in default"
-            onclick={() => reset(setting.key)}
-          >
-            Reset
-          </button>
-        {/if}
+  {#if groups.length > 1}
+    <div class="group-pills" role="tablist" aria-label="Setting categories">
+      <button
+        type="button"
+        class="pill"
+        class:active={activeGroup === ''}
+        onclick={() => (activeGroup = '')}
+      >
+        All ({settings.length})
+      </button>
+      {#each groups as [group, items] (group)}
+        <button
+          type="button"
+          class="pill"
+          class:active={activeGroup === group}
+          onclick={() => (activeGroup = group)}
+        >
+          {group} ({items.length})
+        </button>
+      {/each}
+    </div>
+  {/if}
+
+  {#each filteredGroups as [group, items] (group)}
+    <section class="group-card">
+      <div class="group-header">
+        <h2>{group}</h2>
+        <span class="badge">{items.length}</span>
       </div>
-    {/each}
+      <div class="group-body">
+        {#each items as setting (setting.key)}
+          <div class="entry">
+            <Field
+              spec={setting}
+              isDefault={setting.isDefault}
+              bind:value={edited[setting.key]}
+            />
+            {#if !setting.isDefault}
+              <button
+                class="reset"
+                title="Revert to the built-in default"
+                onclick={() => reset(setting.key)}
+              >
+                <Icon name="reload" size={13} />
+                <span>Reset</span>
+              </button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    </section>
   {/each}
 {/if}
 
 <style>
+  .sticky-toolbar {
+    position: sticky;
+    top: calc(var(--header-height) + var(--space-2));
+    z-index: 10;
+    background: var(--bg-glass);
+    backdrop-filter: var(--backdrop-blur);
+    -webkit-backdrop-filter: var(--backdrop-blur);
+  }
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .toolbar-left strong {
+    font-size: var(--text-md);
+    margin-right: var(--space-1);
+  }
+
+  .group-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+
+  .pill {
+    min-height: 1.9rem;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    text-transform: capitalize;
+    background: var(--surface);
+    color: var(--muted);
+  }
+
+  .pill.active {
+    background: var(--accent-surface);
+    border-color: var(--accent-border);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .group-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xs);
+    margin-bottom: var(--space-5);
+    overflow: hidden;
+  }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-subtle);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .group-header h2 {
+    margin: 0;
+    text-transform: uppercase;
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: var(--fg);
+  }
+
+  .group-body {
+    padding: 0 var(--space-4);
+  }
+
   .entry {
     display: flex;
     align-items: start;
-    gap: 0.5rem;
+    gap: var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .entry:last-child {
+    border-bottom: none;
   }
 
   .entry :global(.field) {
     flex: 1;
+    border-bottom: none;
   }
 
   .reset {
-    margin-top: 0.35rem;
-    font-size: 0.8rem;
+    margin-top: var(--space-3);
+    font-size: var(--text-xs);
+    min-height: 1.875rem;
+    padding: var(--space-1) var(--space-2);
+    color: var(--muted);
+  }
+
+  .reset:hover:not(:disabled) {
+    color: var(--fg);
   }
 </style>

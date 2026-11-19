@@ -9,7 +9,9 @@
     signedIn,
     token,
   } from './lib/auth'
-  import { connect, connected, disconnect } from './lib/events'
+  import { connect, connected, disconnect, downloading } from './lib/events'
+  import Sidebar from './lib/Sidebar.svelte'
+  import TopBar from './lib/TopBar.svelte'
   import SignIn from './views/SignIn.svelte'
   import Wallpaper from './views/Wallpaper.svelte'
   import Settings from './views/Settings.svelte'
@@ -18,11 +20,36 @@
   import Logs from './views/Logs.svelte'
 
   const tabs = [
-    { id: 'wallpaper', label: 'Wallpaper' },
-    { id: 'settings', label: 'Settings' },
-    { id: 'channels', label: 'Channels' },
-    { id: 'history', label: 'History' },
-    { id: 'logs', label: 'Logs' },
+    {
+      id: 'wallpaper',
+      label: 'Wallpaper',
+      subtitle: 'Current desktop & refresh',
+      icon: 'wallpaper',
+    },
+    {
+      id: 'history',
+      label: 'History',
+      subtitle: 'Past wallpapers & cleanup',
+      icon: 'history',
+    },
+    {
+      id: 'channels',
+      label: 'Channels',
+      subtitle: 'Sources, templates & overlays',
+      icon: 'channels',
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      subtitle: 'Application configuration',
+      icon: 'settings',
+    },
+    {
+      id: 'logs',
+      label: 'Logs',
+      subtitle: 'Live stream & log files',
+      icon: 'logs',
+    },
   ] as const
 
   type TabID = (typeof tabs)[number]['id']
@@ -35,9 +62,11 @@
   }
 
   let active = $state<TabID>(tabFromHash())
+  const currentTab = $derived(tabs.find((t) => t.id === active) ?? tabs[0])
 
-  function select(id: TabID) {
-    active = id
+  function select(id: string) {
+    if (!tabs.some((t) => t.id === id)) return
+    active = id as TabID
     window.location.hash = id
   }
 
@@ -76,6 +105,14 @@
     }
   })
 
+  async function handleSignOut() {
+    notice = 'Signed out.'
+    signOut()
+    // The token is forgotten either way; if the daemon lets this page in
+    // without one, it simply carries on.
+    await probeLocalAccess()
+  }
+
   // Connect while signed in, and drop the stream on signing out -- including
   // the automatic sign-out when the daemon rejects the token.
   let wasSignedIn = false
@@ -99,105 +136,92 @@
 
 <svelte:window on:hashchange={() => (active = tabFromHash())} />
 
-<header>
-  <h1>goTApaper</h1>
-  {#if $signedIn}
-    <nav>
-      {#each tabs as tab (tab.id)}
-        <button
-          class:active={active === tab.id}
-          onclick={() => select(tab.id)}
-        >
-          {tab.label}
-        </button>
-      {/each}
-    </nav>
-    <span class="status" class:down={!$connected}>
-      {#if restarting}
-        Daemon restarting…
-      {:else if $connected}
-        Daemon connected
-      {:else}
-        Daemon disconnected — reconnecting…
-      {/if}
-    </span>
-    <button class="small" onclick={restart} disabled={restarting}>Restart daemon</button>
-    {#if !isNative && $token}
-    <button
-      class="small"
-      title="Forget the saved token in this browser"
-      onclick={async () => {
-        notice = 'Signed out.'
-        signOut()
-        // The token is forgotten either way; if the daemon lets this page in
-        // without one, it simply carries on.
-        await probeLocalAccess()
-      }}>Sign out</button
-    >
-    {/if}
+<div class="shell" class:signed-in={$signedIn && ready}>
+  {#if ready && $signedIn}
+    <Sidebar
+      {tabs}
+      {active}
+      connected={$connected}
+      {restarting}
+      downloading={$downloading !== null}
+      showSignOut={!isNative && Boolean($token)}
+      onSelect={select}
+      onRestart={restart}
+      onSignOut={handleSignOut}
+    />
   {/if}
-</header>
 
-<main>
-  {#if !ready}
-    <p class="muted">Loading…</p>
-  {:else if !$signedIn && isNative}
-    <p class="muted">Signing in…</p>
-  {:else if !$signedIn}
-    <SignIn {notice} />
-  {:else if active === 'wallpaper'}
-    <Wallpaper />
-  {:else if active === 'settings'}
-    <Settings />
-  {:else if active === 'channels'}
-    <Channels />
-  {:else if active === 'history'}
-    <History />
-  {:else}
-    <Logs />
-  {/if}
-</main>
+  <div class="workspace">
+    {#if ready && $signedIn}
+      <TopBar
+        title={currentTab.label}
+        subtitle={currentTab.subtitle}
+        icon={currentTab.icon}
+        signedIn={$signedIn}
+        connected={$connected}
+        {restarting}
+        downloading={$downloading !== null}
+        showSignOut={!isNative && Boolean($token)}
+        onRestart={restart}
+        onSignOut={handleSignOut}
+      />
+    {/if}
+
+    <main>
+      {#if !ready}
+        <div class="empty-state">
+          <p class="muted">Loading workspace…</p>
+        </div>
+      {:else if !$signedIn && isNative}
+        <div class="empty-state">
+          <p class="muted">Signing in to local daemon…</p>
+        </div>
+      {:else if !$signedIn}
+        <SignIn {notice} />
+      {:else if active === 'wallpaper'}
+        <Wallpaper />
+      {:else if active === 'settings'}
+        <Settings />
+      {:else if active === 'channels'}
+        <Channels />
+      {:else if active === 'history'}
+        <History />
+      {:else}
+        <Logs />
+      {/if}
+    </main>
+  </div>
+</div>
 
 <style>
-  header {
+  .shell {
+    min-height: 100dvh;
     display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid var(--border);
-    position: sticky;
-    top: 0;
     background: var(--bg);
-    z-index: 1;
   }
 
-  nav {
+  .workspace {
+    flex: 1;
+    min-width: 0;
     display: flex;
-    gap: 0.25rem;
-  }
-
-  nav button.active {
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-  }
-
-  .status {
-    margin-left: auto;
-    color: var(--muted);
-    font-size: 0.8rem;
-  }
-
-  .status.down {
-    color: var(--warn);
-  }
-
-  .small {
-    font-size: 0.8rem;
+    flex-direction: column;
   }
 
   main {
-    padding: 1rem;
-    max-width: 70rem;
+    flex: 1;
+    width: 100%;
+    max-width: var(--container-max);
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-6) var(--space-8);
+  }
+
+  @media (max-width: 820px) {
+    .shell.signed-in .workspace {
+      padding-bottom: calc(var(--mobile-nav-height) + var(--space-4));
+    }
+
+    main {
+      padding: var(--space-4);
+    }
   }
 </style>
