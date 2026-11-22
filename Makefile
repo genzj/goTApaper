@@ -9,6 +9,7 @@ GIT_DIRTY=$(shell test -n "`git status --porcelain`" && echo "+CHANGES" || true)
 IMAGE_NAME := "genzj/goTApaper"
 
 TARGET_DIR := bin
+APP_NAME := goTApaper
 DARWIN_APP_NAME := goTApaper.app
 
 # NOTE: I exclude the vendor source folder because it's TOO HUGE!
@@ -77,43 +78,41 @@ go-build-os-windows: go-build-os-windows-gui go-build-os-windows-console
 go-build-os-windows-console: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win console edition"
 	@echo "GOPATH=$(GOPATH)"
-	cd $(TARGET_DIR) && \
-	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}-console" ../...
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+	    go build -ldflags "$(GO_LDFLAGS)" -o "$(TARGET_DIR)/$(APP_NAME)-$(VERSION)-windows-amd64-console.exe" .
 
 go-build-os-windows-gui: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY) Win gui edition"
 	@echo "GOPATH=$(GOPATH)"
-	cd $(TARGET_DIR) && \
-	    GOX_WINDOWS_386_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
-	    GOX_WINDOWS_AMD64_LDFLAGS="$(GO_LDFLAGS) -H windowsgui" \
-	    gox -cgo -arch "amd64" -os "windows" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+	    go build -ldflags "$(GO_LDFLAGS) -H windowsgui" -o "$(TARGET_DIR)/$(APP_NAME)-$(VERSION)-windows-amd64.exe" .
 
 go-build-os-linux-amd64: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
-	cd $(TARGET_DIR) && \
-	    gox -cgo -arch "amd64" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+	    go build -ldflags "$(GO_LDFLAGS)" -o "$(TARGET_DIR)/$(APP_NAME)-$(VERSION)-linux-amd64" .
 
 go-build-os-linux-i386: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
-	cd $(TARGET_DIR) && \
+	CGO_ENABLED=1 GOOS=linux GOARCH=386 \
 	    PKG_CONFIG_PATH="/usr/lib/i386-linux-gnu/pkgconfig:/usr/lib32/pkgconfig" \
-	    gox -cgo -arch "386" -os "linux"  -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../...
+	    go build -ldflags "$(GO_LDFLAGS)" -o "$(TARGET_DIR)/$(APP_NAME)-$(VERSION)-linux-386" .
 
 go-build-os-darwin-amd64: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
-	cd $(TARGET_DIR) && \
-	    gox -cgo -osarch "darwin/amd64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../... && \
-	    ../generate-dmg.sh "$(VERSION)" "amd64"
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
+	    go build -ldflags "$(GO_LDFLAGS)" -o "$(TARGET_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64" . && \
+	    ./generate-dmg.sh "$(VERSION)" "amd64"
 
 go-build-os-darwin-arm64: $(TARGET_DIR) frontend
 	@echo "building $@ v$(VERSION) $(GIT_COMMIT)$(GIT_DIRTY)"
 	@echo "GOPATH=$(GOPATH)"
-	cd $(TARGET_DIR) && \
-	    gox -cgo -osarch "darwin/arm64" -ldflags "$(GO_LDFLAGS)" -output "{{.Dir}}-$(VERSION)-{{.OS}}-{{.Arch}}"  ../... && \
-	    ../generate-dmg.sh "$(VERSION)" "arm64"
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+	    go build -ldflags "$(GO_LDFLAGS)" -o "$(TARGET_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64" . && \
+	    ./generate-dmg.sh "$(VERSION)" "arm64"
 
 clean:
 	-rm -rf $(TARGET_DIR)

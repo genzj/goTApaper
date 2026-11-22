@@ -29,10 +29,6 @@ jobs:
         cache: npm
         cache-dependency-path: frontend/package-lock.json
 
-    - name: Install tools
-      run: |
-        go install github.com/mitchellh/gox@latest
-
     - name: Build the web interface
       run: make frontend-deps frontend
 
@@ -103,10 +99,6 @@ jobs:
         cache: npm
         cache-dependency-path: frontend/package-lock.json
 
-    - name: Install tools
-      run: |
-        go install github.com/mitchellh/gox@latest
-
     - name: Build the web interface
       run: make frontend-deps frontend
 
@@ -155,7 +147,6 @@ jobs:
 
     - name: Install tools
       run: |
-        go install github.com/mitchellh/gox@latest
         brew install create-dmg
 
     - name: Build the web interface
