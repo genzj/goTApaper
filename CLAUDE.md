@@ -8,7 +8,7 @@ goTApaper is a cross-platform (Windows/macOS/Linux) desktop wallpaper manager wr
 
 ## Common Commands
 
-Toolchain is pinned via `mise.toml` (Go 1.26 — required by Wails v3 — Node 24 LTS, `gox` for cross-compilation). `GOPROXY=direct` is set there — the project resolves modules directly from source hosts rather than a proxy.
+Toolchain is pinned via `mise.toml` (Go 1.26 — required by Wails v3 — and Node 24 LTS). `GOPROXY=direct` is set there — the project resolves modules directly from source hosts rather than a proxy.
 
 ```bash
 # Run all tests
@@ -48,11 +48,11 @@ go run . --app-dir /tmp/profile ...   # run against a throwaway config dir -- bu
 make clean             # removes bin/ and the built frontend (keeping frontend/dist/.gitkeep)
 ```
 
-Native builds use CGO (`gox -cgo`) because the tray, the webview and the setters link against OS libraries. On Linux this requires `build-essential libgtk-4-dev libwebkitgtk-6.0-dev` — Wails v3 defaults to GTK4 and webkitgtk-6.0. A `gtk3` build tag exists upstream (`gtk+-3.0 webkit2gtk-4.1`) for older distributions, but the GTK4 default is what CI builds. Windows needs the WebView2 runtime at *run* time, not at build time.
+Native builds use CGO (`CGO_ENABLED=1`) because the tray, the webview and the setters link against OS libraries. On Linux this requires `build-essential libgtk-4-dev libwebkitgtk-6.0-dev` — Wails v3 defaults to GTK4 and webkitgtk-6.0. A `gtk3` build tag exists upstream (`gtk+-3.0 webkit2gtk-4.1`) for older distributions, but the GTK4 default is what CI builds. Windows needs the WebView2 runtime at *run* time, not at build time.
 
 **Live runs change the real desktop.** `--app-dir` isolates the *configuration*, not the screen: any `refresh`, `gui` or `daemon` run applies a wallpaper through the real setter, and the macOS one sets *every* desktop. There is no no-op setter, so prefer unit tests for anything that only needs to exercise the pipeline, and say so before running one live on someone's machine.
 
-CI already builds natively on each OS (`windows-latest`, `ubuntu-24.04`, `macos-latest`), so `gox` acts as an output-naming wrapper rather than a cross-compiler. The 32-bit Linux target is commented out and should stay that way: a 32-bit GTK4 toolchain is not worth standing up. `daemon` (headless) is the supported way to run on a machine with no desktop session.
+CI builds natively on each OS (`windows-latest`, `ubuntu-24.04`, `macos-latest`) via plain `go build`. The 32-bit Linux target is commented out and should stay that way: a 32-bit GTK4 toolchain is not worth standing up. `daemon` (headless) is the supported way to run on a machine with no desktop session.
 
 ## Architecture
 

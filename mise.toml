@@ -3,7 +3,6 @@
 # version from go.mod rather than from here, so the two stay in step.
 go = "1.26"
 node = "24"
-"go:github.com/mitchellh/gox" = "latest"
 
 [env]
 GOPROXY = "direct"
