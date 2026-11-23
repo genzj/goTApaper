@@ -137,7 +137,7 @@ func nextSlot(current, dir, ext string) string {
 		if err != nil {
 			continue
 		}
-		if candidate != current {
+		if !samePathOrFile(candidate, current) {
 			return slot
 		}
 	}

@@ -1,6 +1,8 @@
 package setter
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/genzj/goTApaper/config"
@@ -47,5 +49,37 @@ func TestPlatformSetterIsRegistered(t *testing.T) {
 	// The default must itself be acceptable, or a fresh install cannot refresh.
 	if err := def.ValidateValue(config.DefaultSetter); err != nil {
 		t.Errorf("the default setter %q is not among %v", config.DefaultSetter, def.EnumValues)
+	}
+}
+
+func TestSamePathOrFile(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.jpg")
+	b := filepath.Join(dir, "b.jpg")
+	for _, p := range []string{a, b} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "link.jpg")
+	if err := os.Symlink(a, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{"identical", a, a, true},
+		{"unclean spelling", a, filepath.Join(dir, ".", "a.jpg"), true},
+		{"symlink", a, link, true},
+		{"different files", a, b, false},
+		{"empty", a, "", false},
+		{"missing", a, filepath.Join(dir, "missing.jpg"), false},
+	} {
+		if got := samePathOrFile(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: samePathOrFile = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

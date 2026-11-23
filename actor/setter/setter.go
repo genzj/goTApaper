@@ -1,7 +1,9 @@
 package setter
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/util"
@@ -61,4 +63,28 @@ func runCommand(path string, arg ...string) (string, error) {
 	}
 
 	return string(out), nil
+}
+
+// samePathOrFile reports whether a and b name the same file: the same cleaned
+// path, or two paths (symlinks, differently spelled directories) that stat to
+// the same file. Either being empty, or not statable, counts as different.
+//
+// Setters use it to tell whether a requested wallpaper is the one the desktop
+// already shows, since shells ignore a set to the path they are displaying.
+func samePathOrFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	infoA, errA := os.Stat(a)
+	if errA != nil {
+		return false
+	}
+	infoB, errB := os.Stat(b)
+	if errB != nil {
+		return false
+	}
+	return os.SameFile(infoA, infoB)
 }

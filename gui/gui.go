@@ -188,6 +188,13 @@ func newTray(app *application.App, window application.Window, opts Options) *Tra
 
 	t.tray = app.SystemTray.New()
 	t.tray.SetTooltip(opts.Name)
+	if runtime.GOOS == "linux" && opts.Name != "" {
+		// On Linux, Wails's SetTooltip is a no-op and SetLabel populates the
+		// StatusNotifierItem Id, Title, and ToolTip (defaulting to "Wails" if
+		// unset). Keep this Linux-only: on macOS, SetLabel draws text next to
+		// the menu bar icon.
+		t.tray.SetLabel(opts.Name)
+	}
 	if runtime.GOOS == "darwin" && opts.TemplateIcon != nil {
 		// A template icon is what lets macOS invert it for a dark menu bar.
 		t.tray.SetTemplateIcon(opts.TemplateIcon)
