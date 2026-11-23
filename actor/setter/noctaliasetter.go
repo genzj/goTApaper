@@ -4,7 +4,6 @@ package setter
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -117,24 +116,6 @@ func nextNoctaliaSlot(current, dir, ext string) string {
 		}
 	}
 	return noctaliaWallpaperSlots[0]
-}
-
-func samePathOrFile(a, b string) bool {
-	if a == "" || b == "" {
-		return false
-	}
-	if filepath.Clean(a) == filepath.Clean(b) {
-		return true
-	}
-	infoA, errA := os.Stat(a)
-	if errA != nil {
-		return false
-	}
-	infoB, errB := os.Stat(b)
-	if errB != nil {
-		return false
-	}
-	return os.SameFile(infoA, infoB)
 }
 
 func init() {
