@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 
@@ -40,12 +41,12 @@ func GetThumbnailDir() string {
 // before it was cropped and watermarked. Not configurable, like the
 // thumbnails: it is an implementation detail of the watermark editor.
 func GetOriginalDir() string {
-	return path.Join(AppDir(), DefaultOriginalDirName)
+	return filepath.Join(AppDir(), DefaultOriginalDirName)
 }
 
 // GetPreviewDir returns the watermark editor's working directory.
 func GetPreviewDir() string {
-	return path.Join(AppDir(), DefaultPreviewDirName)
+	return filepath.Join(AppDir(), DefaultPreviewDirName)
 }
 
 // MustExpand expands file paths with '~' or aborts whole app at failure
