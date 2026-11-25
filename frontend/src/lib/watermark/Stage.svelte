@@ -8,7 +8,15 @@
   // transform, which the compositor does alone), carrying a patch of the
   // render so the text appears to move with the pointer; the layer is
   // rendered again once it is dropped.
+  //
+  // The picture can be zoomed to examine detail. Zoomed in, the stage scrolls
+  // and dragging pans the picture instead of moving a layer: layers are locked
+  // until the zoom is back to fit, so a pan can never move one by accident.
+  // The server is asked for the picture at the zoomed size, so the detail is
+  // real rather than an enlarged thumbnail.
 
+  import { tick, untrack } from 'svelte'
+  import Icon from '../Icon.svelte'
   import {
     api,
     authorizedFetch,
@@ -45,41 +53,155 @@
   } = $props()
 
   let stage = $state<HTMLDivElement>()
+  let canvas = $state<HTMLDivElement>()
+  // The picture's on-screen size (stageW x stageH) -- what layer geometry is
+  // measured against -- and the viewport's, which is the picture at "fit".
   let stageW = $state(0)
   let stageH = $state(0)
+  let viewW = $state(0)
 
   // Measured, with a threshold: a scrollbar appearing nearby shifts the width
   // by a few pixels, and reacting to that would refetch for nothing.
   $effect(() => {
-    if (!stage) return
-    const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect
-      if (Math.abs(width - stageW) > 2) stageW = width
-      if (Math.abs(height - stageH) > 2) stageH = height
+    if (!canvas || !stage) return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect
+        if (entry.target === canvas) {
+          if (Math.abs(width - stageW) > 2) stageW = width
+          if (Math.abs(height - stageH) > 2) stageH = height
+        } else if (Math.abs(stage!.clientWidth - viewW) > 2) {
+          viewW = stage!.clientWidth
+        }
+      }
     })
+    ro.observe(canvas)
     ro.observe(stage)
     return () => ro.disconnect()
   })
 
-  // Asked for at the stage's size in device pixels, so it is crisp on a
-  // HiDPI screen, in 128-pixel steps so resizing the window does not refetch
-  // on every pixel.
-  const requestWidth = $derived(
-    stageW > 0
-      ? Math.min(2560, Math.ceil((stageW * (window.devicePixelRatio || 1)) / 128) * 128)
-      : 0,
+  // ---- zoom --------------------------------------------------------------
+
+  const dpr = () => window.devicePixelRatio || 1
+  /** 1 is "fit": the whole picture in the viewport. */
+  let zoom = $state(1)
+  const zoomed = $derived(zoom > 1.001)
+
+  // The zoom at which one picture pixel is one device pixel.
+  const actualZoom = $derived(
+    viewW > 0 && pictureWidth > 0 ? pictureWidth / dpr() / viewW : 1,
   )
+  const maxZoom = $derived(Math.min(24, Math.max(8, actualZoom * 2)))
+  /** The picture's on-screen size as a percentage of its real pixels. */
+  const percent = $derived(
+    pictureWidth > 0 && stageW > 0 ? Math.round(((stageW * dpr()) / pictureWidth) * 100) : 100,
+  )
+
+  /**
+   * setZoom zooms about a point in the viewport (its centre by default), so
+   * what is under the cursor stays under it.
+   */
+  async function setZoom(next: number, at?: { x: number; y: number }) {
+    if (!stage || !canvas) return
+    next = Math.min(maxZoom, Math.max(1, next))
+    if (Math.abs(next - zoom) < 0.001) return
+    const cx = at?.x ?? stage.clientWidth / 2
+    const cy = at?.y ?? stage.clientHeight / 2
+    const fx = (stage.scrollLeft + cx) / Math.max(canvas.offsetWidth, 1)
+    const fy = (stage.scrollTop + cy) / Math.max(canvas.offsetHeight, 1)
+    zoom = next
+    await tick()
+    if (!stage || !canvas) return
+    stage.scrollLeft = fx * canvas.offsetWidth - cx
+    stage.scrollTop = fy * canvas.offsetHeight - cy
+  }
+
+  const zoomBy = (factor: number, at?: { x: number; y: number }) => setZoom(zoom * factor, at)
+  const fit = () => setZoom(1)
+  const actualSize = () => setZoom(actualZoom <= 1.001 ? 2 : actualZoom)
+
+  function viewportPoint(e: { clientX: number; clientY: number }) {
+    const r = stage!.getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
+  }
+
+  // Ctrl/Cmd + wheel zooms, and so does a trackpad pinch, which browsers
+  // report as a ctrl-wheel. A plain wheel scrolls the zoomed picture. Added
+  // by hand because it has to be non-passive to stop the page zooming.
+  $effect(() => {
+    if (!stage) return
+    const el = stage
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      // A mouse wheel reports ~100 per notch, a pinch a few: clamp, so a
+      // notch is a modest step either way.
+      const dy = Math.max(-30, Math.min(30, e.deltaY))
+      void zoomBy(Math.exp(-dy * 0.01), viewportPoint(e))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
+
+  function frameKeyDown(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key === '+' || e.key === '=') zoomBy(1.25)
+    else if (e.key === '-' || e.key === '_') zoomBy(1 / 1.25)
+    else if (e.key === '0') fit()
+    else if (e.key === '1') actualSize()
+    else return
+    e.preventDefault()
+  }
+
+  // Dragging the zoomed picture pans it.
+  let pan = $state<{ pointer: number; x: number; y: number; left: number; top: number } | null>(null)
+
+  function panDown(e: PointerEvent) {
+    if (!zoomed || e.button !== 0 || !stage) return
+    stage.setPointerCapture(e.pointerId)
+    pan = { pointer: e.pointerId, x: e.clientX, y: e.clientY, left: stage.scrollLeft, top: stage.scrollTop }
+  }
+
+  function panMove(e: PointerEvent) {
+    if (!pan || e.pointerId !== pan.pointer || !stage) return
+    stage.scrollLeft = pan.left - (e.clientX - pan.x)
+    stage.scrollTop = pan.top - (e.clientY - pan.y)
+  }
+
+  function panEnd(e: PointerEvent) {
+    if (pan && e.pointerId === pan.pointer) pan = null
+  }
+
+  // Asked for at the picture's on-screen size in device pixels, so it is
+  // crisp on a HiDPI screen and, zoomed, shows real detail -- in 128-pixel
+  // steps so resizing does not refetch on every pixel, and after a pause so
+  // a wheel zoom asks once rather than at every step.
+  const requestWidth = $derived(
+    stageW > 0 ? Math.min(8192, Math.ceil((stageW * dpr()) / 128) * 128) : 0,
+  )
+  let fetchWidth = $state(0)
+  $effect(() => {
+    const w = requestWidth
+    if (!w) return
+    if (!untrack(() => fetchWidth)) {
+      fetchWidth = w
+      return
+    }
+    const t = window.setTimeout(() => (fetchWidth = w), 150)
+    return () => window.clearTimeout(t)
+  })
 
   // Double-buffered: the previous render stays up until the next one has
   // decoded, so editing never flashes a placeholder.
   let shown = $state('')
   let loadError = $state('')
   $effect(() => {
-    if (!revision || !requestWidth) return
-    const path = api.previewImagePath(requestWidth, revision)
+    if (!revision || !fetchWidth) return
+    const path = api.previewImagePath(fetchWidth, revision)
     let cancelled = false
     let url = ''
-    authorizedFetch(path)
+    const controller = new AbortController()
+    authorizedFetch(path, { signal: controller.signal })
       .then((resp) => (resp.ok ? resp.blob() : Promise.reject(new Error(`HTTP ${resp.status}`))))
       .then(async (blob) => {
         if (cancelled) return
@@ -99,6 +221,7 @@
       })
     return () => {
       cancelled = true
+      controller.abort()
       // Revoked here only if it never made it on screen.
       if (url && url !== shown) URL.revokeObjectURL(url)
     }
@@ -174,7 +297,7 @@
   }
 
   function pointerDown(e: PointerEvent, index: number) {
-    if (e.button !== 0) return
+    if (zoomed || e.button !== 0) return
     const r = results[index]
     if (!r) return
     onSelect(index)
@@ -220,6 +343,7 @@
   }
 
   function keyDown(e: KeyboardEvent, index: number) {
+    if (zoomed) return
     const step = (e.shiftKey ? 10 : 1) / Math.max(stageW, 1)
     const stepY = (e.shiftKey ? 10 : 1) / Math.max(stageH, 1)
     const moves: Record<string, [number, number]> = {
@@ -251,19 +375,46 @@
   const pct = (v: number) => `${(v * 100).toFixed(4)}%`
 </script>
 
-<div class="stage-wrap">
-  <div
-    class="stage"
-    class:busy
-    bind:this={stage}
-    style:aspect-ratio={`${pictureWidth || 16} / ${pictureHeight || 9}`}
-    style:--ratio={pictureRatio}
-    role="application"
-    aria-label="Watermark preview. Select a layer and drag it, or use the arrow keys to move it."
-    onpointerdown={(e) => {
-      if (e.target === stage || (e.target as HTMLElement).tagName === 'IMG') onSelect(-1)
-    }}
-  >
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div class="stage-wrap" onkeydown={frameKeyDown} role="group" aria-label="Preview with zoom">
+  <div class="frame" style:--ratio={pictureRatio}>
+    <div class="zoom-bar" role="toolbar" aria-label="Zoom">
+      <button type="button" onclick={() => zoomBy(1 / 1.25)} disabled={!zoomed} aria-label="Zoom out" title="Zoom out (−)">
+        <Icon name="zoom-out" size={15} />
+      </button>
+      <span class="level" aria-live="polite" title="Size relative to the picture's real pixels">{percent}%</span>
+      <button type="button" onclick={() => zoomBy(1.25)} disabled={zoom >= maxZoom - 0.001} aria-label="Zoom in" title="Zoom in (+, or Ctrl/⌘ + scroll, or pinch)">
+        <Icon name="zoom-in" size={15} />
+      </button>
+      <button type="button" onclick={fit} disabled={!zoomed} title="Fit the whole picture (0)">Fit</button>
+      <button type="button" onclick={actualSize} title="Real pixels, one picture pixel per screen pixel (1)">100%</button>
+    </div>
+    {#if zoomed}
+      <p class="zoom-note" role="status">Zoomed: drag to pan. Layers are locked until you fit the picture.</p>
+    {/if}
+
+    <!-- Focusable only while zoomed, so the arrow keys can scroll it. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="stage"
+      class:busy
+      class:zoomed
+      class:panning={pan !== null}
+      bind:this={stage}
+      style:aspect-ratio={`${pictureWidth || 16} / ${pictureHeight || 9}`}
+      style:--ratio={pictureRatio}
+      role="application"
+      aria-label="Watermark preview. Select a layer and drag it, or use the arrow keys to move it. Plus and minus zoom."
+      tabindex={zoomed ? 0 : -1}
+      onpointerdown={(e) => {
+        if (zoomed) panDown(e)
+        else if (e.target === stage || e.target === canvas || (e.target as HTMLElement).tagName === 'IMG') onSelect(-1)
+      }}
+      onpointermove={panMove}
+      onpointerup={panEnd}
+      onpointercancel={panEnd}
+    >
+      <div class="canvas" bind:this={canvas} style:width={`${zoom * 100}%`} style:aspect-ratio={`${pictureWidth || 16} / ${pictureHeight || 9}`}>
     {#if shown}
       <img src={shown} alt="Watermark preview" decoding="async" draggable="false" />
     {:else}
@@ -320,8 +471,9 @@
           class="handle"
           class:selected={selected === i}
           class:dragging
+          class:locked={zoomed}
           role="button"
-          tabindex="0"
+          tabindex={zoomed ? -1 : 0}
           aria-label={`${layerLabel(layer, i)}: ${r.text}`}
           aria-pressed={selected === i}
           style:left={pct(r.textBounds.x)}
@@ -345,6 +497,8 @@
         </div>
       {/if}
     {/each}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -353,6 +507,66 @@
     width: 100%;
     display: flex;
     justify-content: center;
+  }
+
+  .frame {
+    position: relative;
+    width: 100%;
+    max-width: calc(72vh * var(--ratio, 1.78));
+  }
+
+  .zoom-bar {
+    position: absolute;
+    z-index: 5;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background: rgba(9, 9, 11, 0.78);
+    border-radius: var(--radius-md);
+    color: #fff;
+  }
+
+  .zoom-bar button {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.45rem;
+    font-size: var(--text-xs);
+    color: #fff;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+  }
+
+  .zoom-bar button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.18);
+  }
+
+  .zoom-bar button:disabled {
+    opacity: 0.4;
+  }
+
+  .zoom-bar .level {
+    min-width: 3rem;
+    text-align: center;
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .zoom-note {
+    position: absolute;
+    z-index: 5;
+    left: 8px;
+    bottom: 8px;
+    margin: 0;
+    padding: 0.2rem 0.6rem;
+    font-size: var(--text-xs);
+    color: #fff;
+    background: rgba(9, 9, 11, 0.78);
+    border-radius: var(--radius-pill);
+    pointer-events: none;
   }
 
   .stage {
@@ -368,6 +582,25 @@
     contain: strict;
     touch-action: none;
     user-select: none;
+  }
+
+  /* Zoomed, the stage scrolls and a drag pans it. A flat background and no
+     shadow on the picture keep panning a 4K+ bitmap cheap. */
+  .stage.zoomed {
+    overflow: auto;
+    cursor: grab;
+    overscroll-behavior: contain;
+  }
+
+  .stage.zoomed.panning {
+    cursor: grabbing;
+  }
+
+  /* The picture itself: layer geometry is measured against this, and it is
+     as wide as the zoom says while the stage stays the size of the fit. */
+  .canvas {
+    position: relative;
+    max-width: none;
   }
 
   .stage img {
@@ -422,6 +655,12 @@
     background-origin: content-box;
     will-change: transform;
     contain: layout style;
+  }
+
+  /* Zoomed: still drawn, so the selection is visible, but not grabbable. */
+  .handle.locked {
+    pointer-events: none;
+    cursor: inherit;
   }
 
   .handle:hover,

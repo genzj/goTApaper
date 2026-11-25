@@ -48,7 +48,7 @@ const (
 	// shows, which are re-made on every render.
 	previewImageQuality = 85
 	// MaxPreviewImageWidth caps the scaled copy the editor asks for.
-	MaxPreviewImageWidth = 3840
+	MaxPreviewImageWidth = 8192
 )
 
 // pictureRecord is what is stored next to a saved picture: enough to show its
@@ -472,6 +472,10 @@ func (w *Watermarks) Image(width int) ([]byte, int64, error) {
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: previewImageQuality}); err != nil {
 		return nil, 0, err
+	}
+	// A zoom asks for several large widths; keep only the latest few.
+	if len(w.scaled) >= 4 {
+		w.scaled = map[int][]byte{}
 	}
 	w.scaled[width] = buf.Bytes()
 	return buf.Bytes(), w.revision, nil

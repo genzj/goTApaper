@@ -489,7 +489,7 @@
           {base.title ?? 'Current wallpaper'} · {base.width} × {base.height}
           {#if rendering}· rendering…{/if}
           {#if renderError}<span class="error">· {renderError}</span>{/if}
-          <span class="tips">Drag text to move it (Alt: no snapping) · arrows nudge, Shift ×10</span>
+          <span class="tips">Drag text to move it (Alt: no snapping) · arrows nudge, Shift ×10 · Ctrl/⌘+scroll or pinch to zoom</span>
         </p>
       {/if}
     </section>
