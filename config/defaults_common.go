@@ -22,6 +22,15 @@ const (
 	// DefaultThumbnailDirName holds the wallpaper history thumbnails.
 	DefaultThumbnailDirName = "thumbs"
 
+	// DefaultOriginalDirName holds the last applied picture as downloaded,
+	// before cropping and watermarking, for the watermark editor to work on.
+	DefaultOriginalDirName = "original"
+
+	// DefaultPreviewDirName holds the watermark editor's working files: the
+	// captured picture and the rendered preview, which the desktop preview
+	// sets directly so the real wallpaper file is never touched.
+	DefaultPreviewDirName = "preview"
+
 	// DefaultDaemonInterval specifies default daemon downloading interval
 	DefaultDaemonInterval = 3600
 

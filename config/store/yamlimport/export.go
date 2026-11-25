@@ -194,21 +194,12 @@ func exportWatermarks(s store.Store, root *yaml.Node) error {
 
 	seq := &yaml.Node{Kind: yaml.SequenceNode}
 	for _, l := range layers {
-		if !l.Enabled {
-			continue
-		}
-
 		node := &yaml.Node{Kind: yaml.MappingNode}
-		appendEntry(node, "font", stringScalar(l.Font))
-		appendEntry(node, "point", floatScalar(l.Point))
-		appendEntry(node, "color", quotedScalar(l.Color))
-		appendEntry(node, "position", stringScalar(l.Position))
-		appendEntry(node, "h-margin", floatScalar(l.HMargin))
-		appendEntry(node, "v-margin", floatScalar(l.VMargin))
-		appendEntry(node, "linespace", floatScalar(l.Linespace))
-		appendEntry(node, "alignment", stringScalar(l.Alignment))
-		appendEntry(node, "absolute-point", boolScalar(l.AbsolutePoint))
-		appendEntry(node, "absolute-position", boolScalar(l.AbsolutePosition))
+		if l.Name != "" {
+			appendEntry(node, "name", stringScalar(l.Name))
+		}
+		// Disabled layers are exported too, so a round trip keeps them.
+		appendEntry(node, "enabled", boolScalar(l.Enabled))
 
 		tmpl := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: l.Template}
 		if l.Template != "" {
@@ -217,16 +208,39 @@ func exportWatermarks(s store.Store, root *yaml.Node) error {
 		}
 		appendNode(node, "template", tmpl)
 
+		appendEntry(node, "font", stringScalar(l.Font))
+		appendEntry(node, "size", floatScalar(l.Size))
+		appendEntry(node, "color", quotedScalar(l.Color))
+		appendEntry(node, "anchor", stringScalar(l.Anchor))
+		appendEntry(node, "x", floatScalar(l.X))
+		appendEntry(node, "y", floatScalar(l.Y))
+		appendEntry(node, "alignment", stringScalar(l.Alignment))
+		appendEntry(node, "linespace", floatScalar(l.Linespace))
+
 		bg := &yaml.Node{Kind: yaml.MappingNode}
 		appendEntry(bg, "color", quotedScalar(l.Background.Color))
 		appendEntry(bg, "h-throughout", boolScalar(l.Background.HThroughout))
 		appendEntry(bg, "v-throughout", boolScalar(l.Background.VThroughout))
-		paddings := &yaml.Node{Kind: yaml.SequenceNode}
-		for _, p := range l.Background.Paddings {
-			paddings.Content = append(paddings.Content, floatScalar(p))
+		padding := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
+		for _, p := range l.Background.Padding {
+			padding.Content = append(padding.Content, floatScalar(p))
 		}
-		appendNode(bg, "paddings", paddings)
+		appendNode(bg, "padding", padding)
 		appendNode(node, "background", bg)
+
+		if l.Shadow.Color != "" {
+			shadow := &yaml.Node{Kind: yaml.MappingNode}
+			appendEntry(shadow, "color", quotedScalar(l.Shadow.Color))
+			appendEntry(shadow, "dx", floatScalar(l.Shadow.DX))
+			appendEntry(shadow, "dy", floatScalar(l.Shadow.DY))
+			appendNode(node, "shadow", shadow)
+		}
+		if l.Outline.Color != "" {
+			outline := &yaml.Node{Kind: yaml.MappingNode}
+			appendEntry(outline, "color", quotedScalar(l.Outline.Color))
+			appendEntry(outline, "width", floatScalar(l.Outline.Width))
+			appendNode(node, "outline", outline)
+		}
 
 		seq.Content = append(seq.Content, node)
 	}

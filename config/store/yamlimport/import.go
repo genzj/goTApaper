@@ -129,11 +129,13 @@ func (im *importer) run(root *yaml.Node) error {
 		return err
 	}
 
-	if err := im.importWatermarks(mappingValue(root, "watermark")); err != nil {
+	// Globals before watermarks: converting an old-style layer reads the
+	// picture reference size, which may be among them.
+	if err := im.importGlobals(root); err != nil {
 		return err
 	}
 
-	return im.importGlobals(root)
+	return im.importWatermarks(mappingValue(root, "watermark"))
 }
 
 // knownSections are top-level keys handled structurally rather than as
@@ -485,65 +487,176 @@ func (im *importer) splitMerge(node *yaml.Node) (templateName string, own map[st
 }
 
 // importWatermarks copies the watermark list into watermark_layers.
+//
+// Both layer shapes are accepted. A layer with any of the picture-relative keys
+// (size, anchor, x, y) is read as such; anything else is the shape before the
+// editor -- point, position, margins -- and goes through
+// store.ConvertLegacyWatermark, the same conversion an old database gets.
 func (im *importer) importWatermarks(node *yaml.Node) error {
 	if node == nil || node.Kind != yaml.SequenceNode {
 		return nil
 	}
 
 	for idx, item := range node.Content {
-		var raw struct {
-			Font             string  `yaml:"font"`
-			Point            float64 `yaml:"point"`
-			Color            string  `yaml:"color"`
-			Position         string  `yaml:"position"`
-			HMargin          float64 `yaml:"h-margin"`
-			VMargin          float64 `yaml:"v-margin"`
-			Linespace        float64 `yaml:"linespace"`
-			Alignment        string  `yaml:"alignment"`
-			Template         string  `yaml:"template"`
-			AbsolutePoint    bool    `yaml:"absolute-point"`
-			AbsolutePosition bool    `yaml:"absolute-position"`
-			Background       struct {
-				Color       string    `yaml:"color"`
-				HThroughout bool      `yaml:"h-throughout"`
-				VThroughout bool      `yaml:"v-throughout"`
-				Paddings    []float64 `yaml:"paddings"`
-			} `yaml:"background"`
+		var layer store.WatermarkLayer
+		var err error
+		if hasAnyKey(item, "size", "anchor", "x", "y") {
+			layer, err = decodeWatermark(item, idx)
+		} else {
+			layer, err = im.decodeLegacyWatermark(item, idx)
 		}
-		if err := item.Decode(&raw); err != nil {
+		if err != nil {
 			return fmt.Errorf("watermark %d: %w", idx, err)
 		}
-
-		layer := store.WatermarkLayer{
-			SortOrder: idx,
-			Enabled:   true,
-			Font:      orDefault(raw.Font, "NotoSans-Regular.ttf"),
-			Point:     orDefaultFloat(raw.Point, 13),
-			Color:     orDefault(raw.Color, "222222"),
-			// An unrecognised position or alignment is corrected to the
-			// default here, because the store rejects it outright and one
-			// typo should not abort the whole import.
-			Position:         validOr(raw.Position, config.ValidPosition, config.PositionBottomCenter, idx, "position"),
-			HMargin:          raw.HMargin,
-			VMargin:          raw.VMargin,
-			Linespace:        orDefaultFloat(raw.Linespace, 1.4),
-			Alignment:        validOr(raw.Alignment, config.ValidAlignment, config.AlignCenter, idx, "alignment"),
-			Template:         raw.Template,
-			AbsolutePoint:    raw.AbsolutePoint,
-			AbsolutePosition: raw.AbsolutePosition,
-			Background: store.WatermarkBackground{
-				Color:       raw.Background.Color,
-				HThroughout: raw.Background.HThroughout,
-				VThroughout: raw.Background.VThroughout,
-				Paddings:    raw.Background.Paddings,
-			},
-		}
+		layer.SortOrder = idx
 
 		if err := im.store.UpsertWatermarkLayer(layer); err != nil {
 			return fmt.Errorf("storing watermark %d: %w", idx, err)
 		}
 	}
 	return nil
+}
+
+func hasAnyKey(mapping *yaml.Node, keys ...string) bool {
+	for _, k := range keys {
+		if mappingValue(mapping, k) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// decodeWatermark reads a picture-relative layer, as Export writes it.
+func decodeWatermark(item *yaml.Node, idx int) (store.WatermarkLayer, error) {
+	def := store.NewWatermarkLayer("")
+	raw := struct {
+		Name       string   `yaml:"name"`
+		Enabled    *bool    `yaml:"enabled"`
+		Template   string   `yaml:"template"`
+		Font       string   `yaml:"font"`
+		Size       *float64 `yaml:"size"`
+		Color      string   `yaml:"color"`
+		Anchor     string   `yaml:"anchor"`
+		X          *float64 `yaml:"x"`
+		Y          *float64 `yaml:"y"`
+		Alignment  string   `yaml:"alignment"`
+		Linespace  float64  `yaml:"linespace"`
+		Background struct {
+			Color       string    `yaml:"color"`
+			HThroughout bool      `yaml:"h-throughout"`
+			VThroughout bool      `yaml:"v-throughout"`
+			Padding     []float64 `yaml:"padding"`
+		} `yaml:"background"`
+		Shadow struct {
+			Color string  `yaml:"color"`
+			DX    float64 `yaml:"dx"`
+			DY    float64 `yaml:"dy"`
+		} `yaml:"shadow"`
+		Outline struct {
+			Color string  `yaml:"color"`
+			Width float64 `yaml:"width"`
+		} `yaml:"outline"`
+	}{}
+	if err := item.Decode(&raw); err != nil {
+		return store.WatermarkLayer{}, err
+	}
+
+	l := store.WatermarkLayer{
+		Enabled:   raw.Enabled == nil || *raw.Enabled,
+		Name:      raw.Name,
+		Template:  raw.Template,
+		Font:      orDefault(raw.Font, "NotoSans-Regular.ttf"),
+		Size:      def.Size,
+		Color:     orDefault(raw.Color, def.Color),
+		Anchor:    validOr(raw.Anchor, config.ValidPosition, def.Anchor, idx, "anchor"),
+		X:         def.X,
+		Y:         def.Y,
+		Alignment: validOr(raw.Alignment, config.ValidAlignment, def.Alignment, idx, "alignment"),
+		Linespace: orDefaultFloat(raw.Linespace, def.Linespace),
+		Background: store.WatermarkBackground{
+			Color:       raw.Background.Color,
+			HThroughout: raw.Background.HThroughout,
+			VThroughout: raw.Background.VThroughout,
+		},
+		Shadow:  store.WatermarkShadow{Color: raw.Shadow.Color, DX: raw.Shadow.DX, DY: raw.Shadow.DY},
+		Outline: store.WatermarkOutline{Color: raw.Outline.Color, Width: raw.Outline.Width},
+	}
+	if raw.Size != nil {
+		l.Size = *raw.Size
+	}
+	if raw.X != nil {
+		l.X = *raw.X
+	}
+	if raw.Y != nil {
+		l.Y = *raw.Y
+	}
+	copy(l.Background.Padding[:], raw.Background.Padding)
+	return l, nil
+}
+
+// decodeLegacyWatermark reads a layer in the shape before the editor and
+// converts it.
+func (im *importer) decodeLegacyWatermark(item *yaml.Node, idx int) (store.WatermarkLayer, error) {
+	var raw struct {
+		Font             string  `yaml:"font"`
+		Point            float64 `yaml:"point"`
+		Color            string  `yaml:"color"`
+		Position         string  `yaml:"position"`
+		HMargin          float64 `yaml:"h-margin"`
+		VMargin          float64 `yaml:"v-margin"`
+		Linespace        float64 `yaml:"linespace"`
+		Alignment        string  `yaml:"alignment"`
+		Template         string  `yaml:"template"`
+		AbsolutePoint    bool    `yaml:"absolute-point"`
+		AbsolutePosition bool    `yaml:"absolute-position"`
+		Background       struct {
+			Color       string    `yaml:"color"`
+			HThroughout bool      `yaml:"h-throughout"`
+			VThroughout bool      `yaml:"v-throughout"`
+			Paddings    []float64 `yaml:"paddings"`
+		} `yaml:"background"`
+	}
+	if err := item.Decode(&raw); err != nil {
+		return store.WatermarkLayer{}, err
+	}
+
+	old := store.LegacyWatermarkLayer{
+		Font:  orDefault(raw.Font, "NotoSans-Regular.ttf"),
+		Point: orDefaultFloat(raw.Point, 13),
+		Color: orDefault(raw.Color, "222222"),
+		// An unrecognised position or alignment is corrected to the
+		// default here, because the store rejects it outright and one
+		// typo should not abort the whole import.
+		Position:         validOr(raw.Position, config.ValidPosition, config.PositionBottomCenter, idx, "position"),
+		HMargin:          raw.HMargin,
+		VMargin:          raw.VMargin,
+		Linespace:        orDefaultFloat(raw.Linespace, 1.4),
+		Alignment:        validOr(raw.Alignment, config.ValidAlignment, config.AlignCenter, idx, "alignment"),
+		Template:         raw.Template,
+		AbsolutePoint:    raw.AbsolutePoint,
+		AbsolutePosition: raw.AbsolutePosition,
+	}
+	old.Background.Color = raw.Background.Color
+	old.Background.HThroughout = raw.Background.HThroughout
+	old.Background.VThroughout = raw.Background.VThroughout
+	old.Background.Paddings = raw.Background.Paddings
+
+	return store.ConvertLegacyWatermark(
+		old,
+		im.referenceSize(config.KeyPictureReferenceWidth),
+		im.referenceSize(config.KeyPictureReferenceHeight),
+	), nil
+}
+
+// referenceSize reads a picture reference dimension, already imported with
+// the globals; zero lets the conversion use its default.
+func (im *importer) referenceSize(key string) float64 {
+	setting, err := im.store.Setting(key)
+	if err != nil {
+		return 0
+	}
+	v, _ := strconv.ParseFloat(setting.Value, 64)
+	return v
 }
 
 // validOr keeps a value if the vocabulary accepts it, else substitutes the

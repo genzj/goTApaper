@@ -34,6 +34,16 @@
     | 'sun'
     | 'moon'
     | 'monitor'
+    | 'type'
+    | 'eye'
+    | 'eye-off'
+    | 'copy'
+    | 'plus'
+    | 'undo'
+    | 'redo'
+    | 'help'
+    | 'grip'
+    | 'alert'
 
   let {
     name,
@@ -186,6 +196,41 @@
     <rect x="2" y="3" width="20" height="14" rx="2" />
     <line x1="8" y1="21" x2="16" y2="21" />
     <line x1="12" y1="17" x2="12" y2="21" />
+  {:else if name === 'type'}
+    <polyline points="4 7 4 4 20 4 20 7" />
+    <line x1="9" y1="20" x2="15" y2="20" />
+    <line x1="12" y1="4" x2="12" y2="20" />
+  {:else if name === 'eye'}
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+    <circle cx="12" cy="12" r="3" />
+  {:else if name === 'eye-off'}
+    <path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.16 3.19" />
+    <path d="M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+    <line x1="2" y1="2" x2="22" y2="22" />
+  {:else if name === 'copy'}
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  {:else if name === 'plus'}
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  {:else if name === 'undo'}
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+  {:else if name === 'redo'}
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9a5 5 0 0 0 0 10h3" />
+  {:else if name === 'help'}
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  {:else if name === 'alert'}
+    <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  {:else if name === 'grip'}
+    <circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" />
+    <circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" />
+    <circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" />
   {/if}
 </svg>
 

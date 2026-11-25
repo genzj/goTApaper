@@ -6,10 +6,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/genzj/goTApaper/actor/setter"
 	"github.com/genzj/goTApaper/channel"
-	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
+	"github.com/genzj/goTApaper/service"
 	"github.com/genzj/goTApaper/util"
 )
 
@@ -36,12 +35,10 @@ func reapply(entry store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
 		return nil, fmt.Errorf("history entry %d has no source URL", entry.ID)
 	}
 
-	setterName := config.GetString(config.KeyWallpaperSetter)
-	v, ok := setter.Setters.Get(setterName)
-	if !ok {
-		return nil, fmt.Errorf("setter %q is not registered", setterName)
+	wallpaperSetter, err := currentSetter()
+	if err != nil {
+		return nil, err
 	}
-	wallpaperSetter := v.(setter.Setter)
 
 	layers, err := currentStore().WatermarkLayers()
 	if err != nil {
@@ -60,19 +57,8 @@ func reapply(entry store.WallpaperHistoryEntry) (*channel.PictureMeta, error) {
 	// Rebuilt from the stored row, because the watermark templates read these
 	// fields and have to show the original's title and credit. The history
 	// entry itself is updated in place by applyPicture, not duplicated.
-	meta := &channel.PictureMeta{
-		Title:        entry.Title,
-		Caption:      entry.Caption,
-		Credit:       entry.Credit,
-		Format:       format,
-		Channel:      entry.ChannelType,
-		ChannelKey:   entry.ChannelName,
-		URL:          entry.URL,
-		DownloadTime: time.Now(),
-	}
-	if entry.UploadTime != 0 {
-		meta.UploadTime = time.Unix(entry.UploadTime, 0)
-	}
+	meta := service.MetaFromEntry(entry, format)
+	meta.DownloadTime = time.Now()
 
 	return applyPicture(l, raw, img, meta, wallpaperSetter, layers, &entry)
 }

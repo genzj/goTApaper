@@ -336,22 +336,13 @@
     {/if}
   </section>
 
-  <!--
-    TODO: edit watermark layers here -- add, remove and reorder them, and set
-    each one's font, size, colour, position and template. The API supports it
-    (POST/PUT/DELETE /watermark-layers); only the form is missing, and there
-    is no CLI for it either, so for now it is "config export", edit the YAML,
-    "config import".
-  -->
   <section class="panel-section">
     <div class="section-header">
       <div>
         <h2>Watermark layers</h2>
         <p class="muted">
-          Text overlays drawn on the wallpaper, in this order. Only switching them on
-          and off is available here yet; to change one, edit the output of
-          <code>goTApaper config export</code> and load it back with
-          <code>goTApaper config import</code>.
+          Text overlays drawn on the wallpaper, in this order. Edit them, with a live
+          preview on the current picture, in the <a href="#watermark">Watermark</a> tab.
         </p>
       </div>
       <span class="badge">{layers.length} layers</span>
@@ -360,17 +351,18 @@
     {#if layers.length === 0}
       <div class="empty-state compact">
         <p class="muted">No watermark layers configured.</p>
+        <a href="#watermark">Open the watermark editor</a>
       </div>
     {:else}
       <div class="table-scroll">
         <table>
           <thead>
             <tr>
-              <th>On</th><th>Position</th><th>Font</th><th>Size</th><th>Template</th>
+              <th>On</th><th>Name</th><th>Anchor</th><th>Font</th><th>Size</th><th>Template</th>
             </tr>
           </thead>
           <tbody>
-            {#each layers as layer (layer.id)}
+            {#each layers as layer, i (layer.id)}
               <tr>
                 <td>
                   <input
@@ -379,9 +371,10 @@
                     onchange={() => toggleLayer(layer)}
                   />
                 </td>
-                <td><span class="badge">{layer.position}</span></td>
+                <td>{layer.name || `Layer ${i + 1}`}</td>
+                <td><span class="badge">{layer.anchor}</span></td>
                 <td class="muted">{layer.font}</td>
-                <td>{layer.point} pt</td>
+                <td>{layer.size}%</td>
                 <td class="mono">{layer.template || '—'}</td>
               </tr>
             {/each}

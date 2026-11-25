@@ -97,6 +97,7 @@ func startAPIServer(d *service.Downloader, lc api.Lifecycle) {
 		Config:     service.NewConfig(currentStore()),
 		Wallpaper:  service.NewWallpaper(currentStore()),
 		Downloader: d,
+		Watermarks: watermarkStudio,
 		Logs:       service.NewLogs(),
 		Version:    Version,
 		Lifecycle:  lc,
@@ -140,6 +141,9 @@ func startRefreshLoop(lc api.Lifecycle, onChange func(service.DownloadEvent)) *s
 	if onChange != nil {
 		d.OnChange(onChange)
 	}
+	watermarkStudio = service.NewWatermarks(currentStore())
+	d.SetPreview(showWatermarkPreview, revertWatermarkPreview)
+	activeDownloader = d
 
 	startAPIServer(d, lc)
 
@@ -149,10 +153,14 @@ func startRefreshLoop(lc api.Lifecycle, onChange func(service.DownloadEvent)) *s
 	// download took.
 	wake := make(chan string, 1)
 	config.Observe("*", func(key string, old, new interface{}) {
+		publishConfigChange(key)
+		if !refreshesOnChange(key) {
+			logrus.WithField("key", key).Info("watermark layers saved; they apply from the next refresh")
+			return
+		}
 		// At info, with the key: a refresh it triggers changes the wallpaper,
 		// and the log has to say why.
 		logrus.WithField("key", key).Info("configuration changed, refreshing")
-		publishConfigChange(key)
 		select {
 		case wake <- "config change: " + key:
 		default:
@@ -167,6 +175,16 @@ func startRefreshLoop(lc api.Lifecycle, onChange func(service.DownloadEvent)) *s
 	return d
 }
 
+// refreshesOnChange reports whether a configuration change should refresh at
+// once.
+//
+// Saved watermark layers do not: they apply from the next refresh. Refreshing
+// now could download a different picture and replace the one the user is
+// editing; the editor's preview is how to see them sooner.
+func refreshesOnChange(key string) bool {
+	return key != "watermark"
+}
+
 var exitOnce sync.Once
 
 // onExit releases what a running daemon holds: the API server, and with it
@@ -174,6 +192,8 @@ var exitOnce sync.Once
 // signal and the UI's own shutdown can both reach it.
 func onExit() {
 	exitOnce.Do(func() {
+		revertPreviewOnExit()
+
 		// Deferred so the log file closes last and still records the API
 		// server going away.
 		defer func() {

@@ -113,16 +113,32 @@ make build-os-windows
 
 2. Adding watermark to wallpapers:
 
+    The easiest way is the interface's **Watermark** tab: start from a preset,
+    drag text on a live preview of the current wallpaper, and edit every layer's
+    font, size, colour, position, background box, shadow and outline. **Preview
+    on desktop** shows the result as the wallpaper until you revert it, without
+    touching the real wallpaper; **Save** applies the layers from the next refresh.
+    `goTApaper watermark --help` does the same from a terminal.
+
+    Sizes and positions are relative to the picture, so a layer looks the same on
+    every picture and display:
+
     ```yaml
     watermark:
-      - font: NotoSans-Regular.ttf
-        point: 13
-        color: 222222
-        position: bottom-center
+      - name: Caption
         template: |
-          {{.Title}} ({{.Credit}} | {{.ChannelKey}})
-          {{.UploadTime.Format "2006 Jan 2 15:04:05"}}
+          {{join " · " .Title .Credit .ChannelKey}}
+          {{date "2006 Jan 2 15:04:05" .UploadTime}}
+        font: NotoSans-Regular.ttf  # see "goTApaper watermark fonts"
+        size: 1.2                   # % of the picture's shorter side
+        color: "222222"
+        anchor: bottom-center       # the point of the text that x, y place
+        x: 0.5                      # fraction of the width
+        y: 0.9                      # fraction of the height
     ```
+
+    Configurations in the older shape (`point`, `position`, `h-margin`, ...) are
+    converted automatically.
 
 ### Troubleshooting
 
@@ -132,7 +148,9 @@ make build-os-windows
 
     ```
     Error: Cannot find font file NotoSans-Regular.ttf
-    Solution: Specify full path to font file or install font in system directory
+    Solution: Pick an installed font ("goTApaper watermark fonts" lists them, and the
+    Watermark tab's font picker only offers those), give a full path to the font
+    file, or install the font in a system font directory
     ```
 
 2. Network Access Issues

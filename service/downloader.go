@@ -50,7 +50,20 @@ const (
 	JobRefresh JobKind = "refresh"
 	// JobReapply downloads a recorded picture again.
 	JobReapply JobKind = "reapply"
+	// JobPreview sets the watermark editor's rendered preview as the
+	// desktop wallpaper, temporarily. Nothing is downloaded or recorded.
+	JobPreview JobKind = "preview"
+	// JobRevert puts the real wallpaper back after a preview.
+	JobRevert JobKind = "revert"
 )
+
+// PreviewFunc sets the rendered watermark preview on the desktop and returns
+// the revision it set. Like RefreshFunc it is supplied by the caller, which
+// owns the setter.
+type PreviewFunc func() (revision int64, err error)
+
+// RevertFunc sets the real wallpaper again after a preview.
+type RevertFunc func() error
 
 // Job describes one download.
 type Job struct {
@@ -99,6 +112,10 @@ type DownloadStatus struct {
 	StartedAt int64 `json:"startedAt,omitempty"`
 	// Last is the most recent finished download.
 	Last *Outcome `json:"last,omitempty"`
+	// Previewing reports that the desktop shows a watermark preview rather
+	// than the real wallpaper, and PreviewRevision which render it is.
+	Previewing      bool  `json:"previewing"`
+	PreviewRevision int64 `json:"previewRevision,omitempty"`
 }
 
 // DownloadEvent reports a download starting or finishing.
@@ -132,13 +149,99 @@ type Downloader struct {
 	// request winning when several coalesce.
 	pendingReason string
 	last          *Outcome
-	listeners []func(DownloadEvent)
+	listeners     []func(DownloadEvent)
+
+	preview         PreviewFunc
+	revert          RevertFunc
+	previewing      bool
+	previewRevision int64
 }
 
 // NewDownloader builds a downloader. reapply may be nil, in which case
 // re-applying is reported as unsupported.
 func NewDownloader(s store.Store, refresh RefreshFunc, reapply ReapplyFunc) *Downloader {
 	return &Downloader{store: s, refresh: refresh, reapply: reapply}
+}
+
+// SetPreview installs the functions that put a watermark preview on the
+// desktop and take it off again. Without them, previews are unavailable.
+func (d *Downloader) SetPreview(preview PreviewFunc, revert RevertFunc) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.preview, d.revert = preview, revert
+}
+
+// ShowPreview sets the rendered watermark preview on the desktop, returning
+// ErrBusy while a download runs: it goes through here, rather than calling
+// the setter directly, so the setter is only ever driven by one job.
+func (d *Downloader) ShowPreview(reason string) error {
+	d.mu.Lock()
+	preview := d.preview
+	d.mu.Unlock()
+	if preview == nil {
+		return errors.New("previewing on the desktop is not available here")
+	}
+
+	job := Job{Kind: JobPreview, Reason: reason}
+	return d.start(job, func() (*channel.PictureMeta, error) {
+		rev, err := preview()
+		if err == nil {
+			d.mu.Lock()
+			d.previewing, d.previewRevision = true, rev
+			d.mu.Unlock()
+		}
+		return nil, err
+	})
+}
+
+// RevertPreview sets the real wallpaper again, returning ErrBusy while a
+// download runs.
+func (d *Downloader) RevertPreview(reason string) error {
+	d.mu.Lock()
+	revert := d.revert
+	d.mu.Unlock()
+	if revert == nil {
+		return errors.New("previewing on the desktop is not available here")
+	}
+
+	job := Job{Kind: JobRevert, Reason: reason}
+	return d.start(job, func() (*channel.PictureMeta, error) {
+		err := revert()
+		if err == nil {
+			d.clearPreview()
+		}
+		return nil, err
+	})
+}
+
+// Previewing reports whether the desktop shows a preview.
+func (d *Downloader) Previewing() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.previewing
+}
+
+// RevertPreviewNow sets the real wallpaper again synchronously if a preview
+// is showing, for shutting down: a preview must not outlive the application
+// that can take it off. Best effort, and only when nothing else is running.
+func (d *Downloader) RevertPreviewNow() error {
+	d.mu.Lock()
+	revert, previewing, busy := d.revert, d.previewing, d.running != nil
+	d.mu.Unlock()
+	if !previewing || revert == nil || busy {
+		return nil
+	}
+	if err := revert(); err != nil {
+		return err
+	}
+	d.clearPreview()
+	return nil
+}
+
+func (d *Downloader) clearPreview() {
+	d.mu.Lock()
+	d.previewing, d.previewRevision = false, 0
+	d.mu.Unlock()
 }
 
 // OnChange registers a listener for downloads starting and finishing. It is
@@ -154,7 +257,10 @@ func (d *Downloader) Status() DownloadStatus {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	status := DownloadStatus{State: StateIdle, Last: d.last}
+	status := DownloadStatus{
+		State: StateIdle, Last: d.last,
+		Previewing: d.previewing, PreviewRevision: d.previewRevision,
+	}
 	if d.running != nil {
 		job := *d.running
 		status.State = StateDownloading
@@ -227,6 +333,7 @@ func (d *Downloader) Schedule(reason string) {
 		l.Info("a refresh was asked for during a download; it will run once that finishes")
 	}
 }
+
 // start runs fn in the background unless a download is already running.
 func (d *Downloader) start(job Job, fn func() (*channel.PictureMeta, error)) error {
 	d.mu.Lock()
@@ -270,6 +377,10 @@ func (d *Downloader) start(job Job, fn func() (*channel.PictureMeta, error)) err
 		switch {
 		case err != nil:
 			done.WithError(err).Warn("download failed")
+		case job.Kind == JobPreview || job.Kind == JobRevert:
+			done.Info("watermark preview " + map[JobKind]string{
+				JobPreview: "set on the desktop", JobRevert: "reverted to the real wallpaper",
+			}[job.Kind])
 		case meta == nil:
 			done.Info("download finished without applying a picture")
 		default:
@@ -287,6 +398,10 @@ func (d *Downloader) start(job Job, fn func() (*channel.PictureMeta, error)) err
 		d.mu.Lock()
 		d.running = nil
 		d.last = outcome
+		if meta != nil && err == nil {
+			// A real wallpaper was applied, which replaces any preview.
+			d.previewing, d.previewRevision = false, 0
+		}
 		runPending := d.pending
 		pendingReason := d.pendingReason
 		d.pending = false

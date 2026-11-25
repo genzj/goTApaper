@@ -1,355 +1,253 @@
 package watermark
 
 import (
-	"github.com/genzj/goTApaper/config"
-	"image"
+	"fmt"
 	"math"
+	"path/filepath"
+	"strconv"
 	"strings"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/fogleman/gg"
+
+	"github.com/genzj/goTApaper/config"
+	"github.com/genzj/goTApaper/config/store"
 )
 
-const (
-	positionTopLeft      = "top-left"
-	positionTopCenter    = "top-center"
-	positionTopRight     = "top-right"
-	positionMiddleLeft   = "middle-left"
-	positionMiddleCenter = "middle-center"
-	positionMiddleRight  = "middle-right"
-	positionBottomLeft   = "bottom-left"
-	positionBottomCenter = "bottom-center"
-	positionBottomRight  = "bottom-right"
-)
+// anchorFactors maps an anchor to the fraction of the text box's width and
+// height that lies before the anchor point.
+var anchorFactors = map[string][2]float64{
+	config.PositionTopLeft:      {0, 0},
+	config.PositionTopCenter:    {0.5, 0},
+	config.PositionTopRight:     {1, 0},
+	config.PositionMiddleLeft:   {0, 0.5},
+	config.PositionMiddleCenter: {0.5, 0.5},
+	config.PositionMiddleRight:  {1, 0.5},
+	config.PositionBottomLeft:   {0, 1},
+	config.PositionBottomCenter: {0.5, 1},
+	config.PositionBottomRight:  {1, 1},
+}
 
-const (
-	alignLeft   = "left"
-	alignCenter = "center"
-	alignRight  = "right"
-)
+var alignments = map[string]gg.Align{
+	config.AlignLeft:   gg.AlignLeft,
+	config.AlignCenter: gg.AlignCenter,
+	config.AlignRight:  gg.AlignRight,
+}
 
-const (
-	fallbackFontColor       = "222222"
-	fallbackBackgroundColor = "eeeeee77"
-	fallbackPosition        = positionBottomRight
-	fallbackAlign           = alignRight
-)
+// fallbackFontColor is used when a colour fails to parse. Stored layers are
+// validated, so this only guards a draft sent straight to a preview.
+const fallbackFontColor = "222222"
 
 type render struct {
-	ctx     *gg.Context
-	setting watermarkSetting
+	ctx *gg.Context
 }
 
-func newRender(im image.Image, setting watermarkSetting) render {
-	return render{
-		gg.NewContextForImage(im),
-		setting,
-	}
-}
+// rect is an area in pixels.
+type rect struct{ x, y, w, h float64 }
 
-func (r *render) loadBackgroundColor() {
-	// in case the color in configuration not work
-	r.ctx.SetHexColor(fallbackBackgroundColor)
-	r.ctx.SetHexColor(r.setting.Background.Color)
-}
-
-func (r *render) loadTextColor() {
-	// in case the color in configuration not work
-	r.ctx.SetHexColor(fallbackFontColor)
-	r.ctx.SetHexColor(r.setting.Color)
-}
-
-func (r *render) normalizedPoint() float64 {
-	pixelDense := 1.0
-	if !r.setting.AbsolutePoint {
-		refHeight := config.GetFloat64(config.KeyPictureReferenceHeight)
-		if math.IsNaN(refHeight) || math.IsInf(refHeight, 0) || refHeight == 0 {
-			logrus.WithField("reference-height", refHeight).Warn("invalid reference height")
-		} else {
-			pixelDense = float64(r.ctx.Height()) / refHeight
-		}
-	}
-	logrus.Debugf("font point dense: %f", pixelDense)
-
-	return math.Round(float64(r.setting.Point) * pixelDense)
-}
-
-func (r *render) loadFont() error {
-	fontFile, err := findFont(r.setting.Font)
-	if err != nil {
-		logrus.WithError(err).Errorf("cannot find font %s", r.setting.Font)
-		return err
-	}
-	fontPoints := r.normalizedPoint()
-	logrus.WithFields(map[string]interface{}{
-		"setFontPoints": r.setting.Point,
-		"relFontPoints": fontPoints,
-	}).Debug("load font face")
-	err = r.ctx.LoadFontFace(fontFile, fontPoints)
-	if err != nil {
-		logrus.WithError(err).Errorf("cannot load font %s", fontFile)
-		return err
-	}
-
-	return nil
-}
-
-func (r *render) position(text string) (x, y, ax, ay, width float64) {
-	var maxLineWidth float64 = 0
-	vMargin := r.setting.VMargin
-	hMargin := r.setting.HMargin
-
-	filledHeight := float64(r.ctx.Height())
-	filledWidth := float64(r.ctx.Width())
-	minX, minY, maxX, maxY := 0.0, 0.0, 0.0, 0.0
-	if !r.setting.AbsolutePosition {
-		filledWidth, filledHeight = r.size()
-		minX, minY, maxX, maxY = r.limits()
-		logrus.WithField(
-			"h", filledHeight,
-		).WithField(
-			"w", filledWidth,
-		).Debug("filled size")
-	}
-
-	if vMargin < 0 {
-		vMargin = 0.05
-	}
-	if hMargin < 0 {
-		hMargin = 0.05
-	}
-
-	if vMargin < 1 {
-		vMargin *= filledHeight
-	}
-
-	if hMargin < 1 {
-		hMargin *= filledWidth
-	}
-
-	topOffset := func() float64 {
-		return minY + vMargin
-	}
-	bottomOffset := func() float64 {
-		return maxY - vMargin
-	}
-	leftOffset := func() float64 {
-		return minX + hMargin
-	}
-	rightOffset := func() float64 {
-		return maxX - hMargin
-	}
-	halfWidth := func() float64 {
-		return (maxX - minX) / 2
-	}
-	halfHeight := func() float64 {
-		return (maxY - minY) / 2
-	}
-
-	xCalculator := map[string]func() float64{
-		positionTopLeft:      leftOffset,
-		positionTopCenter:    halfWidth,
-		positionTopRight:     rightOffset,
-		positionMiddleLeft:   leftOffset,
-		positionMiddleCenter: halfWidth,
-		positionMiddleRight:  rightOffset,
-		positionBottomLeft:   leftOffset,
-		positionBottomCenter: halfWidth,
-		positionBottomRight:  rightOffset,
-	}
-	yCalculator := map[string]func() float64{
-		positionTopLeft:      topOffset,
-		positionTopCenter:    topOffset,
-		positionTopRight:     topOffset,
-		positionMiddleLeft:   halfHeight,
-		positionMiddleCenter: halfHeight,
-		positionMiddleRight:  halfHeight,
-		positionBottomLeft:   bottomOffset,
-		positionBottomCenter: bottomOffset,
-		positionBottomRight:  bottomOffset,
-	}
-	anchorTable := map[string][2]float64{
-		positionTopLeft:      [2]float64{0, 0},
-		positionTopCenter:    [2]float64{0.5, 0},
-		positionTopRight:     [2]float64{1, 0},
-		positionMiddleLeft:   [2]float64{0, 0.5},
-		positionMiddleCenter: [2]float64{0.5, 0.5},
-		positionMiddleRight:  [2]float64{1, 0.5},
-		positionBottomLeft:   [2]float64{0, 1},
-		positionBottomCenter: [2]float64{0.5, 1},
-		positionBottomRight:  [2]float64{1, 1},
-	}
-
-	position := r.setting.Position
-	if _, ok := xCalculator[position]; !ok {
-		logrus.Warnf("invalid position %s, fallback to %s", position, fallbackPosition)
-		position = fallbackPosition
-	}
-
-	x = xCalculator[position]()
-	y = yCalculator[position]()
-	a := anchorTable[position]
-	ax, ay = a[0], a[1]
-	logrus.Debugf("watermark position: %##v", map[string]float64{
-		"x": x, "y": y,
-		"ax": ax, "ay": ay,
-	})
-
-	for _, line := range strings.Split(text, "\n") {
-		if lineW, _ := r.ctx.MeasureString(line); lineW > maxLineWidth {
-			maxLineWidth = lineW
-		}
-	}
-
-	return x, y, ax, ay, maxLineWidth
-}
-
-func (r *render) boundOf(s string, x, y, ax, ay, width float64) (bx, by, bw, bh float64) {
-	lineSpacing := r.setting.Linespace
-	dc := r.ctx
-	lines := dc.WordWrap(s, width)
-
-	logrus.WithFields(map[string]interface{}{
-		"fontheight":  dc.FontHeight(),
-		"width":       width,
-		"lineSpacing": lineSpacing,
-		"lines":       lines,
-	}).Debug("calculating bound")
-
-	// sync h formula with MeasureMultilineString
-	height := float64(len(lines)) * dc.FontHeight() * lineSpacing
-	logrus.Debugf("height 1 %v", height)
-	height -= (lineSpacing - 1) * dc.FontHeight()
-	logrus.Debugf("height 2 %v", height)
-
-	x -= ax * width
-	y -= ay * height
-	logrus.WithField("ax", ax).WithField("ay", ay).WithField("width", width).WithField("height", height).Debug("calculating bound")
-
-	paddingSettings := r.setting.Background.Paddings
-	paddings := make([]float64, 0, 4)
-	switch l := len(paddingSettings); l {
-	case 0:
-		// no padding at all
-		paddings = []float64{0, 0, 0, 0}
-	case 1:
-		// use same padding for 4 edges
-		paddings = append(paddings, paddingSettings[0], paddingSettings[0], paddingSettings[0], paddingSettings[0])
-	case 2:
-		// vertical and horizontal padding amounts
-		paddings = append(paddings, paddingSettings[:2]...)
-		paddings = append(paddings, paddingSettings[:2]...)
-	case 3:
-		// top, horizontal and bottom padding amounts
-		paddings = append(paddings, paddingSettings[:3]...)
-		paddings = append(paddings, paddingSettings[1])
-	default:
-		// padding amount for all 4 edges specified
-		paddings = append(paddings, paddingSettings[:4]...)
-	}
-	logrus.WithField("paddings", paddings).Debug("calculating bound")
-	for idx, padding := range paddings {
-		if math.Abs(padding) < 1 {
-			if idx == 0 || idx == 2 {
-				paddings[idx] = padding * height
-			} else {
-				paddings[idx] = padding * width
-			}
-		}
-	}
-	x1 := x + width
-	y1 := y + height
-	logrus.WithField("x", x).WithField("y", y).WithField("x1", x1).WithField("y1", y1).Debug("calculating bound")
-
-	if r.setting.Background.HThroughout {
-		x = 0
-		x1 = float64(dc.Width())
-	} else {
-		x = math.Max(x-paddings[3], 0)
-		x1 = math.Min(x1+paddings[1], float64(dc.Width()))
-	}
-	if r.setting.Background.VThroughout {
-		y = 0
-		y1 = float64(dc.Height())
-	} else {
-		y = math.Max(y-paddings[0], 0)
-		y1 = math.Min(y1+paddings[2], float64(dc.Height()))
-	}
-
-	bx = x
-	by = y
-	bw = x1 - x
-	bh = y1 - y
-	logrus.Debugf("bound: %v", map[string]float64{
-		"bx": bx, "by": y,
-		"bw": bw, "bh": bh,
-	})
-	return bx, by, bw, bh
-}
-
-func (r *render) renderText(text string) error {
-	alignMap := map[string]gg.Align{
-		alignLeft:   gg.AlignLeft,
-		alignCenter: gg.AlignCenter,
-		alignRight:  gg.AlignRight,
-	}
-	align := r.setting.Alignment
-	if _, ok := alignMap[align]; !ok {
-		logrus.Warnf("invalid alignment %s, fallback to %s", align, fallbackAlign)
-		align = fallbackAlign
-	}
-
-	x, y, ax, ay, width := r.position(text)
-	if config.GetBool(config.KeyLogDebugRendering) {
-		r.ctx.SetHexColor("ff00ff")
-		r.ctx.SetLineWidth(5)
-		r.ctx.DrawCircle(x, y, 10)
-		r.ctx.SetLineWidth(3)
-		r.ctx.DrawLine(x-10, y, x+10, y)
-		r.ctx.DrawLine(x, y-10, x, y+10)
-		r.ctx.Stroke()
-	}
-	r.loadTextColor()
-	logrus.WithField("linespace", r.setting.Linespace).Debug("draw string wrapped")
-	r.ctx.DrawStringWrapped(
-		text,
-		x, y,
-		ax, ay,
-		width,
-		r.setting.Linespace,
-		alignMap[align],
-	)
-
-	return nil
-}
-
-func (r *render) renderBackground(text string) {
-	x, y, ax, ay, width := r.position(text)
-	bx, by, bw, bh := r.boundOf(text, x, y, ax, ay, width)
-	r.ctx.DrawRectangle(bx, by, bw, bh)
-	if config.GetBool(config.KeyLogDebugRendering) {
-		r.ctx.SetHexColor("ff00ff")
-		r.ctx.StrokePreserve()
-	}
-	r.loadBackgroundColor()
-	r.ctx.Fill()
-}
-
-func (r *render) image() image.Image {
-	return r.ctx.Image()
-}
-
-func (r *render) updateSetting(setting watermarkSetting) {
-	r.setting = setting
+// layout is where one layer's text and background box go, in pixels.
+type layout struct {
+	text, box rect
+	width     float64 // the widest line, which is the text block's width
 }
 
 func (r *render) size() (w, h float64) {
-	bounds := r.ctx.Image().Bounds()
-	return float64(bounds.Dx()), float64(bounds.Dy())
+	return float64(r.ctx.Width()), float64(r.ctx.Height())
 }
 
-func (r *render) limits() (minX, minY, maxX, maxY float64) {
-	bounds := r.ctx.Image().Bounds()
-	return float64(bounds.Min.X), float64(bounds.Min.Y), float64(bounds.Max.X), float64(bounds.Max.Y)
+// fontPx converts a layer's size, a percentage of the picture's shorter side,
+// into pixels. Not rounded: rounding would make a preview and the full-size
+// picture disagree by up to half a pixel of font size.
+func (r *render) fontPx(l store.WatermarkLayer) float64 {
+	w, h := r.size()
+	return math.Max(l.Size/100*math.Min(w, h), 1)
+}
+
+// loadFont makes the layer's font current and returns its path.
+func (r *render) loadFont(l store.WatermarkLayer) (string, error) {
+	path, err := findFont(l.Font)
+	if err != nil {
+		return "", err
+	}
+	if err := r.ctx.LoadFontFace(path, r.fontPx(l)); err != nil {
+		// A path given directly skips the index's check, so the parser's
+		// error can still surface here.
+		return "", fmt.Errorf("font %s %s; pick another font", filepath.Base(path), describeFontError(err))
+	}
+	return path, nil
+}
+
+// layout measures a layer's text and places it. The current font must be the
+// layer's.
+func (r *render) layout(l store.WatermarkLayer, text string) layout {
+	w, h := r.size()
+	em := r.fontPx(l)
+
+	width := 0.0
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if lw, _ := r.ctx.MeasureString(line); lw > width {
+			width = lw
+		}
+	}
+	// Kept in step with gg's DrawStringWrapped, which is what draws it.
+	fh := r.ctx.FontHeight()
+	height := float64(len(lines))*fh*l.Linespace - (l.Linespace-1)*fh
+
+	f, ok := anchorFactors[l.Anchor]
+	if !ok {
+		f = anchorFactors[config.PositionBottomRight]
+	}
+	text0 := rect{
+		x: l.X*w - f[0]*width,
+		y: l.Y*h - f[1]*height,
+		w: width,
+		h: height,
+	}
+
+	p := l.Background.Padding
+	x0, y0 := text0.x-p[3]*em, text0.y-p[0]*em
+	x1, y1 := text0.x+text0.w+p[1]*em, text0.y+text0.h+p[2]*em
+	if l.Background.HThroughout {
+		x0, x1 = 0, w
+	}
+	if l.Background.VThroughout {
+		y0, y1 = 0, h
+	}
+	x0, y0 = math.Max(x0, 0), math.Max(y0, 0)
+	x1, y1 = math.Min(x1, w), math.Min(y1, h)
+
+	return layout{
+		text:  text0,
+		box:   rect{x: x0, y: y0, w: math.Max(x1-x0, 0), h: math.Max(y1-y0, 0)},
+		width: width,
+	}
+}
+
+// relative converts a pixel area into fractions of the picture.
+func (r *render) relative(p rect) Rect {
+	w, h := r.size()
+	return Rect{X: p.x / w, Y: p.y / h, W: p.w / w, H: p.h / h}
+}
+
+func (r *render) drawBackground(l store.WatermarkLayer, lay layout) {
+	if l.Background.Color == "" || lay.box.w <= 0 || lay.box.h <= 0 {
+		return
+	}
+	r.ctx.DrawRectangle(lay.box.x, lay.box.y, lay.box.w, lay.box.h)
+	r.ctx.SetHexColor(l.Background.Color)
+	r.ctx.Fill()
+}
+
+// drawText draws the shadow, then the outline, then the text itself.
+//
+// gg has no stroked text, so the outline is the text drawn at evenly spaced
+// offsets around a circle of the outline width -- enough of them that no gap
+// shows at that radius.
+func (r *render) drawText(l store.WatermarkLayer, text string, lay layout) {
+	em := r.fontPx(l)
+	align, ok := alignments[l.Alignment]
+	if !ok {
+		align = gg.AlignRight
+	}
+	draw := func(dx, dy float64) {
+		r.ctx.DrawStringWrapped(text, lay.text.x+dx, lay.text.y+dy, 0, 0, lay.width, l.Linespace, align)
+	}
+
+	if l.Shadow.Color != "" {
+		r.ctx.SetHexColor(l.Shadow.Color)
+		draw(l.Shadow.DX*em, l.Shadow.DY*em)
+	}
+
+	if radius := l.Outline.Width * em; l.Outline.Color != "" && radius > 0 {
+		r.ctx.SetHexColor(l.Outline.Color)
+		steps := int(math.Min(math.Max(math.Ceil(2*math.Pi*radius/1.5), 8), 48))
+		for i := 0; i < steps; i++ {
+			a := 2 * math.Pi * float64(i) / float64(steps)
+			draw(radius*math.Cos(a), radius*math.Sin(a))
+		}
+	}
+
+	r.ctx.SetHexColor(fallbackFontColor)
+	if store.ValidHexColor(l.Color) {
+		r.ctx.SetHexColor(l.Color)
+	}
+	draw(0, 0)
+}
+
+// drawDebugOverlay marks the picture's bounds and centre lines and, for each
+// drawn layer, its background box, its text block and its anchor point, with
+// a label naming the layer and anchor.
+func (r *render) drawDebugOverlay(layers []store.WatermarkLayer, results []LayerResult, fontPaths []string) {
+	w, h := r.size()
+	line := math.Max(1, math.Min(w, h)/400)
+	ctx := r.ctx
+
+	ctx.Push()
+	defer ctx.Pop()
+
+	// Picture bounds and centre lines.
+	ctx.SetLineWidth(line * 2)
+	ctx.SetHexColor("ffff00cc")
+	ctx.DrawRectangle(line, line, w-2*line, h-2*line)
+	ctx.Stroke()
+	ctx.SetLineWidth(line)
+	ctx.SetDash(line*8, line*6)
+	ctx.DrawLine(0, h/2, w, h/2)
+	ctx.DrawLine(w/2, 0, w/2, h)
+	ctx.Stroke()
+	ctx.SetDash()
+
+	for i, res := range results {
+		if !res.Enabled || res.Error != nil || res.Text == "" {
+			continue
+		}
+		l := layers[i]
+		box, text := res.BoxBounds, res.TextBounds
+
+		// Background box, padding included.
+		ctx.SetHexColor("ff00ffcc")
+		ctx.SetLineWidth(line)
+		ctx.DrawRectangle(box.X*w, box.Y*h, box.W*w, box.H*h)
+		ctx.Stroke()
+
+		// Text block.
+		ctx.SetHexColor("ff3030ee")
+		ctx.SetLineWidth(line * 1.5)
+		ctx.DrawRectangle(text.X*w, text.Y*h, text.W*w, text.H*h)
+		ctx.Stroke()
+
+		// Anchor point.
+		ax, ay := l.X*w, l.Y*h
+		arm := line * 10
+		ctx.SetHexColor("00e5ffee")
+		ctx.SetLineWidth(line * 2)
+		ctx.DrawCircle(ax, ay, arm/2)
+		ctx.DrawLine(ax-arm, ay, ax+arm, ay)
+		ctx.DrawLine(ax, ay-arm, ax, ay+arm)
+		ctx.Stroke()
+
+		// Label, in the layer's own font at a legible size.
+		if fontPaths[i] == "" {
+			continue
+		}
+		if err := ctx.LoadFontFace(fontPaths[i], math.Max(12, math.Min(w, h)/70)); err != nil {
+			continue
+		}
+		name := l.Name
+		if name == "" {
+			name = "Layer " + strconv.Itoa(i+1)
+		}
+		label := name + " · " + l.Anchor
+		lw, lh := ctx.MeasureString(label)
+		lx := math.Min(math.Max(text.X*w, 0), w-lw-line*4)
+		ly := text.Y*h - lh - line*4
+		if ly < 0 {
+			ly = (text.Y+text.H)*h + line*2
+		}
+		ctx.SetHexColor("000000aa")
+		ctx.DrawRectangle(lx, ly, lw+line*4, lh+line*3)
+		ctx.Fill()
+		ctx.SetHexColor("00e5ff")
+		ctx.DrawStringAnchored(label, lx+line*2, ly+line, 0, 1)
+	}
 }

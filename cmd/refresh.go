@@ -21,6 +21,7 @@ import (
 	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
 	"github.com/genzj/goTApaper/history"
+	"github.com/genzj/goTApaper/service"
 	"github.com/genzj/goTApaper/util"
 )
 
@@ -290,6 +291,10 @@ func applyPicture(
 		l.Error(err)
 		return nil, err
 	}
+
+	// The picture as downloaded, for the watermark editor: the file just set
+	// has the watermarks burnt in.
+	service.RecordOriginal(raw, meta)
 
 	// Recorded only after the wallpaper is actually on the desktop, so the
 	// history is a log of what was applied rather than of what was downloaded.

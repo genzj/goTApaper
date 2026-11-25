@@ -49,3 +49,12 @@ func TestInstanceIDIsValidDBusName(t *testing.T) {
 		}
 	}
 }
+
+func TestSavingWatermarksDoesNotRefresh(t *testing.T) {
+	if refreshesOnChange("watermark") {
+		t.Error("saving watermark layers would refresh, replacing the picture being edited")
+	}
+	if !refreshesOnChange("picture.crop") {
+		t.Error("other changes must still refresh")
+	}
+}

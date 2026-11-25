@@ -1,195 +1,186 @@
+// Package watermark draws text overlays onto a wallpaper.
+//
+// Every size and position in a layer is relative to the picture -- see
+// store.WatermarkLayer -- so a layer renders identically, up to rounding, on a
+// small preview and on the full-size picture. That is what lets the editor
+// preview at any resolution without a scale parameter.
 package watermark
 
 import (
-	"github.com/genzj/goTApaper/config"
-	"github.com/genzj/goTApaper/util"
 	"image"
+	"image/draw"
 	"strings"
-	"text/template"
+
+	"github.com/fogleman/gg"
+	"github.com/sirupsen/logrus"
 
 	"github.com/genzj/goTApaper/channel"
+	"github.com/genzj/goTApaper/config"
 	"github.com/genzj/goTApaper/config/store"
-
-	"github.com/sirupsen/logrus"
+	"github.com/genzj/goTApaper/util"
 )
 
-type watermarkBackgroundSetting struct {
-	Paddings    []float64 `mapstructure:"paddings"`
-	HThroughout bool      `mapstructure:"h-throughout"`
-	VThroughout bool      `mapstructure:"v-throughout"`
-	Color       string    `mapstructure:"color"`
+// RenderOptions adjusts one render.
+type RenderOptions struct {
+	// Debug draws each layer's bounds, background box and anchor, with the
+	// picture's centre lines, over the result.
+	Debug bool
 }
 
-type watermarkSetting struct {
-	Font             string  `mapstructure:"font"`
-	Point            float64 `mapstructure:"point"`
-	Color            string  `mapstructure:"color"`
-	Position         string  `mapstructure:"position"`
-	HMargin          float64 `mapstructure:"h-margin"`
-	VMargin          float64 `mapstructure:"v-margin"`
-	Linespace        float64 `mapstructure:"linespace"`
-	Alignment        string  `mapstructure:"alignment"`
-	Template         string  `mapstructure:"template"`
-	AbsolutePoint    bool    `mapstructure:"absolute-point"`
-	AbsolutePosition bool    `mapstructure:"absolute-position"`
-	Background       watermarkBackgroundSetting
+// Rect is an area of the picture, as fractions of its width and height.
+type Rect struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
 }
 
-// fromStoreLayer converts a stored watermark layer into the internal render
-// setting. The renderer keeps its own struct so that render.go needs no
-// knowledge of the storage layer.
-func fromStoreLayer(l store.WatermarkLayer) watermarkSetting {
-	return watermarkSetting{
-		Font:             l.Font,
-		Point:            l.Point,
-		Color:            l.Color,
-		Position:         l.Position,
-		HMargin:          l.HMargin,
-		VMargin:          l.VMargin,
-		Linespace:        l.Linespace,
-		Alignment:        l.Alignment,
-		Template:         l.Template,
-		AbsolutePoint:    l.AbsolutePoint,
-		AbsolutePosition: l.AbsolutePosition,
-		Background: watermarkBackgroundSetting{
-			Paddings:    l.Background.Paddings,
-			HThroughout: l.Background.HThroughout,
-			VThroughout: l.Background.VThroughout,
-			Color:       l.Background.Color,
-		},
-	}
+// LayerError explains why a layer was not drawn.
+type LayerError struct {
+	// Stage is "template" or "font".
+	Stage   string `json:"stage"`
+	Message string `json:"message"`
+	// Line and Column locate a template error, one-based, zero if unknown.
+	Line   int `json:"line,omitempty"`
+	Column int `json:"column,omitempty"`
 }
 
-// Render draws the given watermark layers onto an image.
+func (e *LayerError) Error() string { return e.Stage + ": " + e.Message }
+
+// LayerResult reports how one layer rendered, in the order the layers were
+// given, so an editor can draw a handle over each and show its problems.
+type LayerResult struct {
+	// Index is the layer's position in the list rendered. A draft layer that
+	// has never been saved has no ID, so this is what identifies it.
+	Index   int   `json:"index"`
+	ID      int64 `json:"id"`
+	Enabled bool  `json:"enabled"`
+	// Text is the template's output.
+	Text string `json:"text"`
+	// TextBounds is the text block and BoxBounds the background box around
+	// it, including padding.
+	TextBounds Rect `json:"textBounds"`
+	BoxBounds  Rect `json:"boxBounds"`
+	// FontPx is the font size on this picture, in pixels, for the editor's
+	// "≈ N px" readout.
+	FontPx float64     `json:"fontPx"`
+	Error  *LayerError `json:"error,omitempty"`
+}
+
+// Render draws the enabled layers onto an image for a refresh. Rendering
+// problems are logged and the layer skipped: the wallpaper is still worth
+// applying without it.
 //
-// Layers are passed in rather than read from a global, so that the caller that
-// already owns the store supplies them and this package needs no ambient
-// configuration beyond the rendering debug flag.
+// When the debug-rendering setting is on, the debug overlay is drawn and the
+// picture as it was before rendering is saved next to the wallpaper file.
 func Render(im image.Image, meta *channel.PictureMeta, layers []store.WatermarkLayer) (image.Image, error) {
-	type task struct {
-		text    string
-		setting watermarkSetting
+	debug := config.GetBool(config.KeyLogDebugRendering)
+	if debug {
+		path := config.GetWallpaperFileName() + "-before-rendering.jpeg"
+		if err := util.SaveImageToJpeg(im, path, 75); err != nil {
+			logrus.WithError(err).Debug("cannot save the picture before rendering")
+		}
 	}
-	tasks := []task{}
 
-	settings := make([]watermarkSetting, 0, len(layers))
-	for _, l := range layers {
+	out, results := RenderLayers(im, meta, layers, RenderOptions{Debug: debug})
+	for _, r := range results {
+		if r.Error != nil {
+			logrus.WithFields(logrus.Fields{
+				"layer": r.Index + 1,
+				"stage": r.Error.Stage,
+			}).WithError(r.Error).Warn("watermark layer skipped")
+		}
+	}
+	return out, nil
+}
+
+// RenderLayers draws the layers onto a copy of im and reports how each one
+// rendered. Disabled layers are reported but not drawn. The source image is
+// returned unchanged when there is nothing to draw, so a caller can keep the
+// original file's bytes.
+//
+// Layers are drawn in order, each with its background then its text, so a
+// later layer is on top of an earlier one -- what a layer list in an editor
+// means.
+func RenderLayers(
+	im image.Image, meta *channel.PictureMeta, layers []store.WatermarkLayer, opts RenderOptions,
+) (image.Image, []LayerResult) {
+	results := make([]LayerResult, len(layers))
+	anyEnabled := false
+	for i, l := range layers {
+		results[i] = LayerResult{Index: i, ID: l.ID, Enabled: l.Enabled}
+		anyEnabled = anyEnabled || l.Enabled
+	}
+	if !anyEnabled && !opts.Debug {
+		return im, results
+	}
+	if meta == nil {
+		meta = &channel.PictureMeta{}
+	}
+
+	r := newRender(im)
+	fontPaths := make([]string, len(layers))
+	for i, l := range layers {
 		if !l.Enabled {
 			continue
 		}
-		settings = append(settings, fromStoreLayer(l))
-	}
-	logrus.Debugf("%d watermark to render", len(settings))
+		res := &results[i]
 
-	for idx, setting := range settings {
-		logrus.Debugf("start rendering watermark %##v", setting)
-		template := template.New("watermark")
-		template, err := template.Parse(setting.Template)
+		text, terr := executeTemplate(l.Template, meta)
+		if terr != nil {
+			res.Error = terr
+			continue
+		}
+		res.Text = text
+
+		path, err := r.loadFont(l)
 		if err != nil {
-			logrus.WithError(err).Warnf(
-				"parse template of %d-th template failed, skip", idx,
-			)
+			res.Error = &LayerError{Stage: "font", Message: err.Error()}
 			continue
 		}
-		logrus.Debugf(
-			"parse template of %d-th template successfully: %##v", idx, template,
-		)
+		fontPaths[i] = path
+		res.FontPx = r.fontPx(l)
 
-		builder := &strings.Builder{}
-		if err := template.Execute(builder, meta); err != nil {
-			logrus.WithError(err).Warnf(
-				"execute template of %d-th template failed, skip", idx,
-			)
+		if text == "" {
 			continue
 		}
-		text := strings.TrimSpace(builder.String())
-		logrus.Debugf("render watermark text %#v", text)
-		tasks = append(tasks, task{text: text, setting: setting})
+		lay := r.layout(l, text)
+		res.TextBounds = r.relative(lay.text)
+		res.BoxBounds = r.relative(lay.box)
+
+		r.drawBackground(l, lay)
+		r.drawText(l, text, lay)
 	}
 
-	r := newRender(im, watermarkSetting{})
-	if config.GetBool(config.KeyLogDebugRendering) {
-		minX, minY, maxX, maxY := r.limits()
-		w, h := r.size()
-		logrus.WithField(
-			"w", w,
-		).WithField("minX", minX).WithField("minY", minY).WithField("maxX", maxX).WithField("maxY", maxY).WithField("h", h).WithField("bounds", r.ctx.Image().Bounds()).Debugln("dumping original file before rendering")
-		radius := 25.0
-		r.ctx.Push()
-
-		// Corners
-		r.ctx.DrawCircle(0, 0, radius)
-		r.ctx.DrawCircle(maxX, maxY, radius)
-		r.ctx.SetHexColor("ffff00aa")
-		r.ctx.Fill()
-
-		// Bounds
-		r.ctx.SetLineWidth(5)
-		r.ctx.DrawRectangle(minX, minY, w, h)
-		r.ctx.SetHexColor("ffff00aa")
-		r.ctx.Stroke()
-
-		wallpaperPath := config.GetWallpaperFileName() + "-before-rendering.jpeg"
-		util.SaveImageToJpeg(r.ctx.Image(), wallpaperPath, 75)
-		r.ctx.Pop()
+	if opts.Debug {
+		r.drawDebugOverlay(layers, results, fontPaths)
 	}
+	return r.ctx.Image(), results
+}
 
-	// layer-1, background
-	logrus.Debugln("layer-1, background")
-	for idx, task := range tasks {
-		if task.setting.Background.Color == "" {
-			continue
-		}
-		r.updateSetting(task.setting)
-		if err := r.loadFont(); err != nil {
-			logrus.Warnf("%d-th watermark ignored due to font loading error", idx)
-			continue
-		}
-		r.renderBackground(task.text)
+// executeTemplate renders a layer's template against the picture metadata.
+func executeTemplate(src string, meta *channel.PictureMeta) (string, *LayerError) {
+	tmpl, err := ParseTemplate(src)
+	if err != nil {
+		return "", templateError(err)
 	}
-
-	// layer-2, text
-	logrus.Debugln("layer-2, text")
-	for idx, task := range tasks {
-		r.updateSetting(task.setting)
-		if err := r.loadFont(); err != nil {
-			logrus.Warnf("%d-th watermark ignored due to font loading error", idx)
-			continue
-		}
-		r.renderText(task.text)
+	var b strings.Builder
+	if err := tmpl.Execute(&b, meta); err != nil {
+		return "", templateError(err)
 	}
+	return strings.TrimSpace(b.String()), nil
+}
 
-	// layer-3 debug overlay
-	if config.GetBool(config.KeyLogDebugRendering) {
-		logrus.Debugln("layer-3, debug overlay")
-		for _, task := range tasks {
-			r.updateSetting(task.setting)
-			postW, postH := r.size()
-			logrus.WithField(
-				"h", postH,
-			).WithField(
-				"w", postW,
-			).Debug("size after fill")
-			minX, minY, _, _ := r.limits()
-			r.ctx.SetHexColor("ff0000")
-			r.ctx.SetLineWidth(5)
-			r.ctx.DrawRectangle(
-				minY, minX, postW, postH,
-			)
-			r.ctx.Stroke()
-			r.ctx.DrawLine(
-				0, float64(r.ctx.Height())/2,
-				float64(r.ctx.Width()), float64(r.ctx.Height())/2,
-			)
-			r.ctx.DrawLine(
-				float64(r.ctx.Width())/2, 0,
-				float64(r.ctx.Width())/2, float64(r.ctx.Height()),
-			)
-			r.ctx.SetDash(10)
-			r.ctx.Stroke()
-			r.ctx.SetDash()
-		}
-	}
-
-	return r.ctx.Image(), nil
+// newRender prepares a context over a copy of im whose bounds start at the
+// origin.
+//
+// The cropper returns a sub-image, whose bounds do not start at zero. gg
+// draws text in the image's own coordinates but fills shapes from zero, so
+// the two would disagree; normalising once here means every coordinate below
+// is simply 0..W, 0..H.
+func newRender(im image.Image) *render {
+	b := im.Bounds()
+	rgba := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(rgba, rgba.Bounds(), im, b.Min, draw.Src)
+	return &render{ctx: gg.NewContextForRGBA(rgba)}
 }
