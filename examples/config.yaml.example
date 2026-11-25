@@ -57,97 +57,90 @@ picture:
 
 # watermark can be added to the downloaded picture
 # multiple watermarks can be enabled simultaneously
+# Watermark layers: text drawn onto each wallpaper, in order, each on top of
+# the ones before. The interface's Watermark tab edits them with a live
+# preview; "goTApaper watermark --help" does the same from the command line.
+#
+# Every size and position is relative to the picture, never in pixels, so a
+# layer looks the same on every picture and every display:
+#   * size is a percentage of the picture's shorter side
+#   * x and y place the text box's anchor point, as fractions of the picture's
+#     width and height (0,0 is top-left, 1,1 bottom-right)
+#   * paddings, shadow offsets and outline widths are in em, multiples of the
+#     font size
+#
+# Layers written in the older shape (point, position, h-margin, v-margin,
+# paddings) are still imported, converted using reference-width/-height.
 watermark:
   -
-    # name of the font file to be used for watermark
-    # it can be an absolute file path or a name of the font file (NOT the name
-    # of font family) in which case font will be searched in system font paths:
-    #   Win:
-    #     %WINDIR%/Fonts,
-    #     %LOCALAPPDATA%/Microsoft/Windows/Fonts
-    #   Linux/Unix:
-    #     ~/.fonts, $XDG_DATA_HOME/.fonts, ~/.local/share/fonts,
-    #     /usr/local/share/fonts/, /usr/share/fonts/ and fonts directories under
-    #     each dir in $XDG_DATA_DIRS
-    #   MacOS (Darwin):
-    #     ~/Library/Fonts/, /Library/Fonts/, /System/Library/Fonts/
-    # ONLY TrueType font (*.ttf) supported!
+    # Labels the layer in the editor; no effect on rendering.
+    name: Caption
+
+    # Set to false to keep a layer without drawing it.
+    enabled: true
+
+    # Go template producing the text; it can span several lines. See
+    # https://golang.org/pkg/text/template/ for the syntax. Fields:
+    #   .Title .Caption .Credit       text from the provider
+    #   .Channel .ChannelKey          the channel's type and configured name
+    #   .Format .URL                  the picture's format and source
+    #   .UploadTime .DownloadTime     times; format them with date
+    # Functions:
+    #   date "2006-01-02" .UploadTime   format a time (Go reference layout)
+    #   upper / lower TEXT              change case
+    #   default "fallback" VALUE        VALUE, or the fallback when empty
+    #   truncate 40 TEXT                shorten to 40 characters, ending in …
+    #   join " · " .Title .Credit       join the non-empty values
+    template: |
+      {{join " · " .Title .Credit .ChannelKey}}
+      {{date "2006 Jan 2 15:04:05" .UploadTime}}
+
+    # Name of the font file (NOT the font family) or a path. A name is looked
+    # up in the system and user font directories; "goTApaper watermark fonts"
+    # lists what is available. ONLY TrueType-outline fonts (*.ttf, and *.otf
+    # with TrueType outlines) are supported; collections (*.ttc) are not.
     font: NotoSans-Regular.ttf
 
-    # point size of the font
-    point: 13
+    # Font size, as a percentage of the picture's shorter side.
+    size: 1.2
 
-    # If set to false, the font point will be calculated dynamically
-    # to keep size of watermarks visually consistent on pictures in various
-    # resolution. Font point used for rendering is:
-    #   render_point = config_point * (actual_picture_height / reference_height)
-    absolute-point: false
+    # Colour in rgb, rrggbb or rrggbbaa hexadecimal notation. Quote it when it
+    # contains only digits (e.g. "11223344"), or YAML reads it as a number.
+    color: "222222"
 
+    # Which point of the text box x and y place: top-left, top-center,
+    # top-right, middle-left, middle-center, middle-right, bottom-left,
+    # bottom-center or bottom-right.
+    anchor: bottom-center
+    x: 0.5
+    y: 0.9
 
-    # If set to false, ratio of picture will be taken into consideration
-    # when position watermarks to keep them in a relatively stable position.
-    absolute-position: false
+    # Alignment of the lines within the text box: left, center or right.
+    alignment: center
 
-    # color of the watermark in 6 hexadecimal (rrggbb) or 8 hexadecimal
-    # (rrggbbaa) notation. remember to wrap the value in quotes when it only
-    # contains digital (e.g. "11223344") or yaml parser will interpret it as
-    # an integer
-    color: 222222
-
-    # position of watermark lines, can be one of top-left, top-center,
-    # top-right middle-left, middle-center, middle-right, bottom-left,
-    # bottom-center, bottom-right
-    position: bottom-center
-
-    # Horizontal/vertical margin, i.e. distance between margin and
-    # the left-or-right/top-or-bottom edge of the picture
-    # The hMargin is not applicable to *-center positions, likewise the vMargin
-    # is not applicable to middle-* positions. Margins will be ignored without
-    # any error if not applicable.
-    # If a float less than 1 is specified, it will be interpreted as relative
-    # percentage of the width (for h-margin) or height (for v-margin) of the
-    # picture; otherwise it will be used directly as pixel number
-    h-margin: 0.1
-    v-margin: 0.1
-
-
-    # Space height between each two lines. Relative to font height.
+    # Space between lines, relative to the font height.
     linespace: 1.4
 
-    # Alignment of lines. It can be left, center or right
-    alignment: center
-    # Golang Template used to generate watermark, can contain multiple lines.
-    # refer to https://golang.org/pkg/text/template/ for golang template syntax
-    # fields can be used in the template:
-    #   Title string: title of the wallpaper.
-    #   Credit string: credit info or name of uploader
-    #   UploadTime time: when is the wallpaper uploaded
-    #   DownloadTime time: when is the wallpaper downloaded
-    template: |
-      {{.Title}} ({{.Credit}} | {{.ChannelKey}})
-      {{.UploadTime.Format "2006 Jan 2 15:04:05"}}
-    
     background:
-      # Color of watermark background, in the same notation with font color.
-      # If unset or set to blank string, no background will be rendered
+      # Colour of the box behind the text. Empty draws no box.
       color: "eeeeee66"
-
-      # If set, background will be expanded to the left/right edges
-      # (h-throughout) and/or top/bottom edges (v-throughout)
+      # Stretch the box to the left/right edges (h-throughout) and/or the
+      # top/bottom edges (v-throughout) of the picture.
       h-throughout: true
       v-throughout: false
+      # Space around the text in em: top, right, bottom, left.
+      padding: [0.3, 0.6, 0.3, 0.6]
 
-      # Padding between border of the background to edge of text. Paddings can
-      # be specified in array of float with various number of element:
-      #   * with 4 or more elements: only first 4 will be used as top, right,
-      #     bottom and left padding respectively
-      #   * with 3 elements: value for top, right, bottom; left padding will be
-      #     set the same as right
-      #   * with 2 elements: use the first element for top and bottom, second for
-      #     the rest
-      #   * with 1 element: use the value for all four paddings
-      paddings:
-        - 0.2
+    # Optional drop shadow under the text; offsets in em.
+    # shadow:
+    #   color: "00000088"
+    #   dx: 0.06
+    #   dy: 0.06
+
+    # Optional outline around the text; width in em.
+    # outline:
+    #   color: "ffffff"
+    #   width: 0.04
 
 # The active-channels is a list containing keys of enabled channel definitions.
 # Items can either be plain string names which enable corresponding channels

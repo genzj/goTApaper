@@ -114,8 +114,8 @@ func TestImportExampleConfig(t *testing.T) {
 	if len(layers) != 1 {
 		t.Fatalf("got %d watermark layers, want 1", len(layers))
 	}
-	if layers[0].Position != config.PositionBottomCenter {
-		t.Errorf("watermark position = %q, want bottom-center", layers[0].Position)
+	if layers[0].Anchor != config.PositionBottomCenter {
+		t.Errorf("watermark anchor = %q, want bottom-center", layers[0].Anchor)
 	}
 	if layers[0].Background.Color != "eeeeee66" {
 		t.Errorf("background color = %q, want eeeeee66", layers[0].Background.Color)
@@ -267,8 +267,8 @@ active-channels:
 	if len(layers) != 1 {
 		t.Fatalf("got %d layers, want 1", len(layers))
 	}
-	if !config.ValidPosition(layers[0].Position) {
-		t.Errorf("position = %q, want a valid one", layers[0].Position)
+	if !config.ValidPosition(layers[0].Anchor) {
+		t.Errorf("anchor = %q, want a valid one", layers[0].Anchor)
 	}
 	if !config.ValidAlignment(layers[0].Alignment) {
 		t.Errorf("alignment = %q, want a valid one", layers[0].Alignment)
@@ -577,6 +577,66 @@ func TestExportNestsNamespacedKeys(t *testing.T) {
 		}
 		if got.Value != want {
 			t.Errorf("%s survived export as %q, want %q", key, got.Value, want)
+		}
+	}
+}
+
+// TestWatermarkRoundTrip guards the export of the picture-relative shape: what
+// Export writes must import back to the same layers, disabled ones included.
+func TestWatermarkRoundTrip(t *testing.T) {
+	s := importDoc(t, `
+watermark:
+  - name: Credit
+    enabled: false
+    template: "{{.Credit}}"
+    font: Go-Regular.ttf
+    size: 2.5
+    color: "ffffff"
+    anchor: top-left
+    x: 0.03
+    y: 0.04
+    alignment: left
+    linespace: 1.2
+    background: {color: "00000080", padding: [0.1, 0.2, 0.3, 0.4]}
+    shadow: {color: "000000", dx: 0.05, dy: 0.07}
+    outline: {color: "ff0000", width: 0.02}
+  - point: 13
+    position: bottom-right
+    h-margin: 0.05
+    v-margin: 0.05
+channels:
+  only:
+    type: bing-wallpaper
+active-channels:
+  - only
+`)
+	first, err := s.WatermarkLayers()
+	if err != nil || len(first) != 2 {
+		t.Fatalf("WatermarkLayers = %v, %v", first, err)
+	}
+	if first[0].Enabled || first[0].Name != "Credit" || first[0].Size != 2.5 ||
+		first[0].Background.Padding != [4]float64{0.1, 0.2, 0.3, 0.4} ||
+		first[0].Shadow.DY != 0.07 || first[0].Outline.Color != "ff0000" {
+		t.Errorf("new-shape layer = %+v", first[0])
+	}
+	if first[1].Anchor != config.PositionBottomRight || first[1].X != 0.95 || first[1].Y != 0.95 {
+		t.Errorf("legacy layer not converted: %+v", first[1])
+	}
+
+	out, err := Export(s)
+	if err != nil {
+		t.Fatalf("Export = %v", err)
+	}
+	again := importDoc(t, string(out))
+	second, err := again.WatermarkLayers()
+	if err != nil || len(second) != 2 {
+		t.Fatalf("re-imported = %v, %v\n%s", second, err, out)
+	}
+	for i := range first {
+		a, b := first[i], second[i]
+		a.ID, b.ID = 0, 0
+		if a != b {
+			t.Errorf("layer %d changed in the round trip:\n%+v\n%+v", i, a, b)
 		}
 	}
 }

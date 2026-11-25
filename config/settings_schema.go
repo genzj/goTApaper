@@ -252,13 +252,13 @@ func buildDefinitions() []Definition {
 		{
 			Key: KeyPictureReferenceWidth, Kind: KindInt, Default: "1920",
 			Label:       "Reference width",
-			Description: "reference display width, used for cropping and watermark sizing",
+			Description: "reference display width, used for cropping",
 			LegacyKeys:  []string{"reference-width"},
 		},
 		{
 			Key: KeyPictureReferenceHeight, Kind: KindInt, Default: "1080",
 			Label:       "Reference height",
-			Description: "reference display height, used for cropping and watermark sizing",
+			Description: "reference display height, used for cropping",
 			LegacyKeys:  []string{"reference-height"},
 		},
 		{

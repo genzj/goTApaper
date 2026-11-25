@@ -115,40 +115,76 @@ type EffectiveChannel struct {
 
 // WatermarkLayer is one rendered text overlay. Layers are an ordered list; a
 // picture may carry several.
+//
+// Every size and position is relative to the picture, never in pixels, so a
+// layer looks the same on a 1280-pixel preview and a 5K wallpaper, and a
+// preset is plain data that means the same thing on every machine:
+//
+//   - Size is a percentage of the picture's shorter side (CSS vmin).
+//   - X and Y place the text box's Anchor point as fractions of the picture's
+//     width and height.
+//   - Paddings and effect sizes are in em: multiples of the font size.
 type WatermarkLayer struct {
 	ID        int64 `json:"id"`
 	SortOrder int   `json:"sortOrder"`
 	Enabled   bool  `json:"enabled"`
+	// Name labels the layer in the editor. It has no effect on rendering.
+	Name string `json:"name"`
 
-	Font  string  `json:"font"`
-	Point float64 `json:"point"`
-	Color string  `json:"color"`
-
-	// Position is one of config.PositionValues.
-	Position string  `json:"position"`
-	HMargin  float64 `json:"hMargin"`
-	VMargin  float64 `json:"vMargin"`
-
-	Linespace float64 `json:"linespace"`
-	// Alignment is one of config.AlignmentValues.
-	Alignment string `json:"alignment"`
 	// Template is a Go text/template rendered against the picture metadata.
 	// Unrelated to ChannelTemplate.
 	Template string `json:"template"`
 
-	AbsolutePoint    bool `json:"absolutePoint"`
-	AbsolutePosition bool `json:"absolutePosition"`
+	// Font is a font file name, resolved in the platform font directories, or
+	// a path.
+	Font string `json:"font"`
+	// Size is the font size as a percentage of the picture's shorter side.
+	Size  float64 `json:"size"`
+	Color string  `json:"color"`
+
+	// Anchor is the point of the text box that X and Y place, one of
+	// config.PositionValues.
+	Anchor string `json:"anchor"`
+	// X and Y are the anchor's position as fractions of the picture's width
+	// and height: 0,0 is the top-left corner and 1,1 the bottom-right.
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+
+	// Alignment is one of config.AlignmentValues.
+	Alignment string  `json:"alignment"`
+	Linespace float64 `json:"linespace"`
 
 	Background WatermarkBackground `json:"background"`
+	Shadow     WatermarkShadow     `json:"shadow"`
+	Outline    WatermarkOutline    `json:"outline"`
 }
 
 // WatermarkBackground describes the box drawn behind a watermark's text.
 type WatermarkBackground struct {
 	// Color is empty when no background should be rendered.
-	Color       string    `json:"color"`
-	HThroughout bool      `json:"hThroughout"`
-	VThroughout bool      `json:"vThroughout"`
-	Paddings    []float64 `json:"paddings"`
+	Color string `json:"color"`
+	// HThroughout and VThroughout stretch the box across the whole picture.
+	HThroughout bool `json:"hThroughout"`
+	VThroughout bool `json:"vThroughout"`
+	// Padding is the space around the text, in em: top, right, bottom, left.
+	Padding [4]float64 `json:"padding"`
+}
+
+// WatermarkShadow is a drop shadow drawn under a watermark's text. An empty
+// Color draws none.
+type WatermarkShadow struct {
+	Color string `json:"color"`
+	// DX and DY offset the shadow, in em; positive is right and down.
+	DX float64 `json:"dx"`
+	DY float64 `json:"dy"`
+}
+
+// WatermarkOutline is a stroke drawn around a watermark's text. An empty
+// Color or a zero Width draws none.
+type WatermarkOutline struct {
+	Color string `json:"color"`
+	// Width is the stroke width, in em.
+	Width float64 `json:"width"`
 }
 
 // WallpaperHistoryEntry is one applied wallpaper, as recorded in the history.
@@ -240,6 +276,10 @@ type Store interface {
 	WatermarkLayers() ([]WatermarkLayer, error)
 	UpsertWatermarkLayer(l WatermarkLayer) error
 	DeleteWatermarkLayer(id int64) error
+	// ReplaceWatermarkLayers replaces every layer with the given list, in
+	// that order, in one transaction. A layer whose ID matches an existing
+	// one keeps it; the rest get new IDs. It returns the stored list.
+	ReplaceWatermarkLayers(layers []WatermarkLayer) ([]WatermarkLayer, error)
 
 	// Wallpaper history
 

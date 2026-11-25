@@ -312,7 +312,20 @@ func (c *Config) UpsertWatermarkLayer(l store.WatermarkLayer) error {
 	if l.ID == 0 && l.SortOrder == 0 {
 		l.SortOrder = store.AppendOrder
 	}
+	if err := ValidateLayers([]store.WatermarkLayer{l}); err != nil {
+		return err
+	}
 	return c.store.UpsertWatermarkLayer(l)
+}
+
+// ReplaceWatermarkLayers saves the editor's whole list at once. Saving does
+// not re-render the current wallpaper: the layers apply from the next
+// refresh, and the preview is how to see them before that.
+func (c *Config) ReplaceWatermarkLayers(layers []store.WatermarkLayer) ([]store.WatermarkLayer, error) {
+	if err := ValidateLayers(layers); err != nil {
+		return nil, err
+	}
+	return c.store.ReplaceWatermarkLayers(layers)
 }
 
 // DeleteWatermarkLayer removes one watermark layer.

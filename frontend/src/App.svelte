@@ -18,6 +18,7 @@
   import Channels from './views/Channels.svelte'
   import History from './views/History.svelte'
   import Logs from './views/Logs.svelte'
+  import Watermark from './views/Watermark.svelte'
 
   const tabs = [
     {
@@ -31,6 +32,12 @@
       label: 'History',
       subtitle: 'Past wallpapers & cleanup',
       icon: 'history',
+    },
+    {
+      id: 'watermark',
+      label: 'Watermark',
+      subtitle: 'Design overlays with a live preview',
+      icon: 'type',
     },
     {
       id: 'channels',
@@ -182,6 +189,8 @@
         <Wallpaper />
       {:else if active === 'settings'}
         <Settings />
+      {:else if active === 'watermark'}
+        <Watermark />
       {:else if active === 'channels'}
         <Channels />
       {:else if active === 'history'}

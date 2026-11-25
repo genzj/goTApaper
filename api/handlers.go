@@ -17,6 +17,7 @@ type handlers struct {
 	config     *service.Config
 	wallpaper  *service.Wallpaper
 	downloader *service.Downloader
+	watermarks *service.Watermarks
 	logs       *service.Logs
 	events     *eventHub
 	lifecycle  Lifecycle

@@ -79,27 +79,118 @@ export interface TemplateView extends ChannelTemplate {
   usedBy: string[]
 }
 
+/**
+ * WatermarkLayer is one text overlay. Every size and position is relative to
+ * the picture: size is a percentage of its shorter side, x and y place the
+ * text box's anchor as fractions of its width and height, and paddings and
+ * effect sizes are in em (multiples of the font size).
+ */
 export interface WatermarkLayer {
   id: number
   sortOrder: number
   enabled: boolean
-  font: string
-  point: number
-  color: string
-  position: string
-  hMargin: number
-  vMargin: number
-  linespace: number
-  alignment: string
+  name: string
   template: string
-  absolutePoint: boolean
-  absolutePosition: boolean
+  font: string
+  size: number
+  color: string
+  anchor: string
+  x: number
+  y: number
+  alignment: string
+  linespace: number
   background: {
     color: string
     hThroughout: boolean
     vThroughout: boolean
-    paddings: number[]
+    padding: [number, number, number, number]
   }
+  shadow: { color: string; dx: number; dy: number }
+  outline: { color: string; width: number }
+}
+
+export interface FontInfo {
+  id: string
+  family: string
+  style: string
+  file: string
+  path: string
+}
+
+/** An installed font the renderer cannot load, and why. */
+export interface UnsupportedFont {
+  family: string
+  style: string
+  file: string
+  path: string
+  reason: string
+}
+
+export interface WatermarkPreset {
+  id: string
+  name: string
+  description: string
+  layers: WatermarkLayer[]
+}
+
+export interface TemplateField {
+  name: string
+  type: 'text' | 'time'
+  description: string
+  example: string
+  snippet: string
+  current?: string
+}
+
+export interface TemplateFunc {
+  name: string
+  signature: string
+  description: string
+  example: string
+  result: string
+  snippet: string
+}
+
+export interface TemplateHelp {
+  fields: TemplateField[]
+  funcs: TemplateFunc[]
+}
+
+/** A rectangle as fractions of the picture's width and height. */
+export interface FractionRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface LayerResult {
+  index: number
+  id: number
+  enabled: boolean
+  text: string
+  textBounds: FractionRect
+  boxBounds: FractionRect
+  fontPx: number
+  error?: { stage: 'template' | 'font'; message: string; line?: number; column?: number }
+}
+
+export interface PreviewBase {
+  entryId?: number
+  title?: string
+  url?: string
+  width: number
+  height: number
+  capturedAt: number
+  stale: boolean
+}
+
+export interface PreviewResult {
+  revision: number
+  width: number
+  height: number
+  layers: LayerResult[]
+  base: PreviewBase
 }
 
 export interface HistoryEntry {
@@ -182,7 +273,7 @@ export interface RefreshResult {
 export type DownloadState = 'idle' | 'downloading'
 
 export interface DownloadJob {
-  kind: 'refresh' | 'reapply'
+  kind: 'refresh' | 'reapply' | 'preview' | 'revert'
   channels?: string[]
   force?: boolean
   entryId?: number
@@ -201,6 +292,9 @@ export interface DownloadStatus {
   job?: DownloadJob
   startedAt?: number
   last?: DownloadOutcome
+  /** The desktop shows a watermark preview rather than the real wallpaper. */
+  previewing?: boolean
+  previewRevision?: number
 }
 
 export interface Status {
@@ -241,6 +335,7 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const headers: Record<string, string> = {}
   if (body !== undefined) {
@@ -251,6 +346,7 @@ async function request<T>(
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   })
 
   if (!resp.ok) {
@@ -309,6 +405,36 @@ export const api = {
     request<WatermarkLayer[]>('POST', '/watermark-layers', l),
   deleteWatermarkLayer: (id: number) =>
     request<void>('DELETE', `/watermark-layers/${id}`),
+  // Saves the whole list. The layers apply from the next refresh.
+  replaceWatermarkLayers: (layers: WatermarkLayer[]) =>
+    request<WatermarkLayer[]>('PUT', '/watermark-layers', layers),
+
+  // Watermark editor
+  // Listed once per daemon run; restarting it picks up newly installed fonts.
+  fonts: () => request<FontInfo[]>('GET', '/fonts'),
+  unsupportedFonts: () => request<UnsupportedFont[]>('GET', '/fonts/unsupported'),
+  watermarkPresets: () => request<WatermarkPreset[]>('GET', '/watermark-presets'),
+  templateHelp: () => request<TemplateHelp>('GET', '/watermark/template-fields'),
+  previewBase: () => request<PreviewBase>('GET', '/watermark/preview/base'),
+  capturePreview: () => request<PreviewBase>('POST', '/watermark/preview/capture'),
+  renderPreview: (layers: WatermarkLayer[], debug: boolean, signal?: AbortSignal) =>
+    request<PreviewResult>('POST', '/watermark/preview', { layers, debug }, signal),
+  /** The rendered preview, scaled; fetch it with authorizedFetch. */
+  previewImagePath: (width: number, revision: number) =>
+    `/watermark/preview/image?w=${Math.round(width)}&rev=${revision}`,
+  /** Renders layers small without changing the preview, for the preset gallery. */
+  previewSample: async (layers: WatermarkLayer[], width: number): Promise<Blob> => {
+    const resp = await authorizedFetch('/watermark/preview/sample', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layers, width }),
+    })
+    if (!resp.ok) throw new ApiError(`sample failed with ${resp.status}`, resp.status)
+    return resp.blob()
+  },
+  // Both answer 202 and run as a job; 409 while a download runs.
+  showPreviewOnDesktop: () => request<DownloadStatus>('POST', '/watermark/preview/desktop'),
+  revertPreview: () => request<DownloadStatus>('POST', '/watermark/preview/revert'),
 
   // Wallpaper
   lastApplied: () => request<LastApplied>('GET', '/wallpaper/last-applied'),

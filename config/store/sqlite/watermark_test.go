@@ -12,20 +12,23 @@ func sampleLayer() store.WatermarkLayer {
 	return store.WatermarkLayer{
 		SortOrder: store.AppendOrder,
 		Enabled:   true,
+		Name:      "Caption",
 		Font:      "NotoSans-Regular.ttf",
-		Point:     13,
+		Size:      1.2,
 		Color:     "222222",
-		Position:  config.PositionBottomCenter,
-		HMargin:   0.1,
-		VMargin:   0.1,
+		Anchor:    config.PositionBottomCenter,
+		X:         0.5,
+		Y:         0.9,
 		Linespace: 1.4,
 		Alignment: config.AlignCenter,
 		Template:  "{{.Title}}",
 		Background: store.WatermarkBackground{
 			Color:       "eeeeee66",
 			HThroughout: true,
-			Paddings:    []float64{0.2},
+			Padding:     [4]float64{0.2, 0.4, 0.2, 0.4},
 		},
+		Shadow:  store.WatermarkShadow{Color: "00000088", DX: 0.05, DY: 0.06},
+		Outline: store.WatermarkOutline{Color: "ffffff", Width: 0.03},
 	}
 }
 
@@ -46,9 +49,9 @@ func TestWatermarkLayerRoundTrip(t *testing.T) {
 
 	got := layers[0]
 	want := sampleLayer()
-	if got.Position != want.Position || got.Alignment != want.Alignment {
-		t.Errorf("position/alignment = %q/%q, want %q/%q",
-			got.Position, got.Alignment, want.Position, want.Alignment)
+	got.ID, want.SortOrder = 0, got.SortOrder
+	if got != want {
+		t.Errorf("round trip = %+v\nwant %+v", got, want)
 	}
 	if got.Template != want.Template {
 		t.Errorf("template = %q, want %q", got.Template, want.Template)
@@ -56,8 +59,8 @@ func TestWatermarkLayerRoundTrip(t *testing.T) {
 	if got.Background.Color != want.Background.Color || !got.Background.HThroughout {
 		t.Errorf("background = %+v, want %+v", got.Background, want.Background)
 	}
-	if len(got.Background.Paddings) != 1 || got.Background.Paddings[0] != 0.2 {
-		t.Errorf("paddings = %v, want [0.2]", got.Background.Paddings)
+	if got.Background.Padding != want.Background.Padding {
+		t.Errorf("padding = %v, want %v", got.Background.Padding, want.Background.Padding)
 	}
 }
 
@@ -69,7 +72,7 @@ func TestWatermarkLayerRejectsUnknownEnums(t *testing.T) {
 	s := openMemory(t)
 
 	bad := sampleLayer()
-	bad.Position = "middle" // not one of the nine valid positions
+	bad.Anchor = "middle" // not one of the nine valid positions
 	err := s.UpsertWatermarkLayer(bad)
 	var invalid *config.InvalidValueError
 	if !errors.As(err, &invalid) {
@@ -108,7 +111,7 @@ func TestWatermarkLayerUpdateAndDelete(t *testing.T) {
 	}
 
 	updated := layers[0]
-	updated.Position = config.PositionTopLeft
+	updated.Anchor = config.PositionTopLeft
 	if err := s.UpsertWatermarkLayer(updated); err != nil {
 		t.Fatalf("update = %v", err)
 	}
@@ -120,8 +123,8 @@ func TestWatermarkLayerUpdateAndDelete(t *testing.T) {
 	if len(layers) != 1 {
 		t.Fatalf("update created a second row: got %d layers", len(layers))
 	}
-	if layers[0].Position != config.PositionTopLeft {
-		t.Errorf("position = %q, want %q", layers[0].Position, config.PositionTopLeft)
+	if layers[0].Anchor != config.PositionTopLeft {
+		t.Errorf("anchor = %q, want %q", layers[0].Anchor, config.PositionTopLeft)
 	}
 
 	if err := s.DeleteWatermarkLayer(updated.ID); err != nil {

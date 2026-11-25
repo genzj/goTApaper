@@ -36,6 +36,18 @@ func GetThumbnailDir() string {
 	return path.Join(AppDir(), DefaultThumbnailDirName)
 }
 
+// GetOriginalDir returns the directory holding the last applied picture
+// before it was cropped and watermarked. Not configurable, like the
+// thumbnails: it is an implementation detail of the watermark editor.
+func GetOriginalDir() string {
+	return path.Join(AppDir(), DefaultOriginalDirName)
+}
+
+// GetPreviewDir returns the watermark editor's working directory.
+func GetPreviewDir() string {
+	return path.Join(AppDir(), DefaultPreviewDirName)
+}
+
 // MustExpand expands file paths with '~' or aborts whole app at failure
 func MustExpand(filename string) string {
 	l := logrus.WithField("filename", filename)

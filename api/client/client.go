@@ -267,3 +267,61 @@ func (c *Client) Events() (io.ReadCloser, error) {
 	}
 	return resp.Body, nil
 }
+
+// Get fetches a path's raw body, for a response that is not JSON -- an image.
+func (c *Client) Get(path string) ([]byte, error) {
+	req, err := http.NewRequest("GET", c.base+wire.BasePath+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, decodeError("GET", path, resp.Status, payload)
+	}
+	return payload, nil
+}
+
+// Fonts lists the fonts watermark layers can use.
+func (c *Client) Fonts(out any) error { return c.Do("GET", "/fonts", nil, out) }
+
+// WatermarkPresets lists the built-in watermark presets.
+func (c *Client) WatermarkPresets(out any) error {
+	return c.Do("GET", "/watermark-presets", nil, out)
+}
+
+// CapturePreview captures the current wallpaper for the watermark editor.
+func (c *Client) CapturePreview(out any) error {
+	return c.Do("POST", "/watermark/preview/capture", nil, out)
+}
+
+// RenderPreview renders layers onto the captured wallpaper. debug nil uses
+// the debug-rendering setting.
+func (c *Client) RenderPreview(layers any, debug *bool, out any) error {
+	body := map[string]any{"layers": layers}
+	if debug != nil {
+		body["debug"] = *debug
+	}
+	return c.Do("POST", "/watermark/preview", body, out)
+}
+
+// PreviewImage fetches the latest rendered preview, full size.
+func (c *Client) PreviewImage() ([]byte, error) { return c.Get("/watermark/preview/image") }
+
+// PreviewOnDesktop sets the latest preview on the desktop temporarily.
+func (c *Client) PreviewOnDesktop(out any) error {
+	return c.Do("POST", "/watermark/preview/desktop", nil, out)
+}
+
+// RevertPreview puts the real wallpaper back after a desktop preview.
+func (c *Client) RevertPreview(out any) error {
+	return c.Do("POST", "/watermark/preview/revert", nil, out)
+}

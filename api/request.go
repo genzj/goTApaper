@@ -13,8 +13,12 @@ import (
 
 // Request parsing and file responses shared by every handler.
 
+// maxBodyBytes bounds a request body. The largest legitimate one is a full
+// list of watermark layers, a few kilobytes.
+const maxBodyBytes = 1 << 20
+
 func decodeBody(w http.ResponseWriter, r *http.Request, target any) bool {
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	// Reject unknown fields: silently ignoring a misspelled one would look
 	// like the write succeeded while doing nothing.
 	decoder.DisallowUnknownFields()

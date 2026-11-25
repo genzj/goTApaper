@@ -54,6 +54,9 @@ type Options struct {
 	Wallpaper  *service.Wallpaper
 	Downloader *service.Downloader
 	Logs       *service.Logs
+	// Watermarks serves the watermark editor. Nil answers its routes with
+	// 501.
+	Watermarks *service.Watermarks
 	// Version is reported by GET /status.
 	Version string
 	// Lifecycle serves POST /daemon/restart and /daemon/stop. Nil answers
@@ -88,6 +91,7 @@ func Start(opts Options) (*Server, error) {
 		config:     opts.Config,
 		wallpaper:  opts.Wallpaper,
 		downloader: opts.Downloader,
+		watermarks: opts.Watermarks,
 		logs:       logs,
 		events:     newEventHub(),
 		version:    opts.Version,
