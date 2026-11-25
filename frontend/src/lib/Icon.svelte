@@ -43,6 +43,7 @@
     | 'redo'
     | 'help'
     | 'grip'
+    | 'alert'
 
   let {
     name,
@@ -221,6 +222,10 @@
   {:else if name === 'help'}
     <circle cx="12" cy="12" r="10" />
     <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  {:else if name === 'alert'}
+    <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
     <line x1="12" y1="17" x2="12.01" y2="17" />
   {:else if name === 'grip'}
     <circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" />

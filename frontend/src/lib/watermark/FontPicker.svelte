@@ -6,6 +6,7 @@
   // fetched on demand through the API: only the families shown are loaded.
 
   import { authorizedFetch, type FontInfo, type UnsupportedFont } from '../api'
+  import Icon from '../Icon.svelte'
 
   let {
     value = $bindable(),
@@ -171,6 +172,22 @@
       {/each}
     </select>
   {/if}
+  {#if unsupported.length > 0}
+    <!-- Folded by default: a warning icon, expanding to the list on click. -->
+    <button
+      type="button"
+      class="warn-toggle"
+      class:open={showUnsupported}
+      aria-expanded={showUnsupported}
+      aria-controls={`${id}-unsupported`}
+      aria-label={`${unsupported.length} installed fonts are not offered; show why`}
+      title={`${unsupported.length} installed ${unsupported.length === 1 ? 'font is' : 'fonts are'} not offered — click for details`}
+      onclick={() => (showUnsupported = !showUnsupported)}
+    >
+      <Icon name="alert" size={15} />
+      <span class="count">{unsupported.length}</span>
+    </button>
+  {/if}
 </div>
 {#if currentUnsupported}
   <p class="warn small">
@@ -182,22 +199,19 @@
     <code>{value}</code> is not installed here, so this layer is not drawn. Pick an installed font.
   </p>
 {/if}
-{#if unsupported.length > 0}
-  <p class="muted small">
-    {unsupported.length} installed {unsupported.length === 1 ? 'font is' : 'fonts are'} not offered because
-    the renderer cannot read {unsupported.length === 1 ? 'it' : 'them'}.
-    <button type="button" class="link" onclick={() => (showUnsupported = !showUnsupported)} aria-expanded={showUnsupported}>
-      {showUnsupported ? 'Hide' : 'Show which'}
-    </button>
-    Fonts installed since goTApaper started appear after restarting it.
-  </p>
-  {#if showUnsupported}
+{#if unsupported.length > 0 && showUnsupported}
+  <div class="unsupported-panel" id={`${id}-unsupported`}>
+    <p class="muted small">
+      {unsupported.length} installed {unsupported.length === 1 ? 'font is' : 'fonts are'} not offered:
+      the renderer cannot read {unsupported.length === 1 ? 'it' : 'them'}.
+      Fonts installed since goTApaper started appear after restarting it.
+    </p>
     <ul class="unsupported-list">
       {#each unsupported as u (u.path)}
         <li><strong>{u.family}</strong> <span class="muted">{u.style} · {u.file}</span> — {u.reason}</li>
       {/each}
     </ul>
-  {/if}
+  </div>
 {/if}
 
 <style>
@@ -271,22 +285,45 @@
     font-size: var(--text-xs);
   }
 
+  .warn-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0 0.45rem;
+    color: var(--warn);
+    border-color: var(--warn-border);
+    background: var(--warn-surface);
+    flex-shrink: 0;
+  }
+
+  .warn-toggle.open {
+    border-color: var(--warn);
+  }
+
+  .warn-toggle .count {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .unsupported-panel {
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--warn-border);
+    background: var(--warn-surface);
+    border-radius: var(--radius-sm);
+  }
+
+  .unsupported-panel .small {
+    margin: 0;
+  }
+
   .unsupported-list {
     margin: var(--space-1) 0 0;
     padding-left: var(--space-4);
     max-height: 9rem;
     overflow: auto;
     font-size: var(--text-xs);
-  }
-
-  .link {
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--accent);
-    font-size: var(--text-xs);
-    cursor: pointer;
-    text-decoration: underline;
   }
 
   .small {

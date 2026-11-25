@@ -5,6 +5,7 @@
   // stored.
 
   import type { FontInfo, LayerResult, TemplateHelp, UnsupportedFont, WatermarkLayer } from '../api'
+  import Icon from '../Icon.svelte'
   import ColorInput from './ColorInput.svelte'
   import FontPicker from './FontPicker.svelte'
   import NumberSlider from './NumberSlider.svelte'
@@ -105,7 +106,18 @@
   </details>
 
   <details open>
-    <summary>Font</summary>
+    <summary>
+      Font
+      {#if unsupportedFonts.length > 0}
+        <span
+          class="summary-warn"
+          title={`${unsupportedFonts.length} installed fonts are not offered; open the warning beside the font name for details`}
+        >
+          <Icon name="alert" size={13} />
+          <span class="sr-only">{unsupportedFonts.length} installed fonts are not offered</span>
+        </span>
+      {/if}
+    </summary>
     <div class="group">
       <span class="row-label">Family</span>
       <FontPicker bind:value={layer.font} {fonts} unsupported={unsupportedFonts} id="wm-font" onEdit={() => onEdit()} />
@@ -288,6 +300,22 @@
     font-weight: 600;
     font-size: var(--text-sm);
     user-select: none;
+  }
+
+  .summary-warn {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: var(--space-1);
+    color: var(--warn);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .group {
