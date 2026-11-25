@@ -301,7 +301,11 @@
     const r = results[index]
     if (!r) return
     onSelect(index)
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    const handle = e.currentTarget as HTMLElement
+    handle.setPointerCapture(e.pointerId)
+    // preventDefault below stops the browser focusing the handle, and the
+    // arrow keys only nudge a focused one -- unfocused, they scroll the page.
+    handle.focus({ preventScroll: true })
     drag = {
       index,
       pointer: e.pointerId,
